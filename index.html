@@ -315,7 +315,8 @@ var L = (function(){
     if (!g.fines) g.fines = [];
     g.fineSeq = Math.max(g.fineSeq||0, g.fines.reduce(function(m,x){ return Math.max(m, x.id); }, 0)) + 1;
     g.players[i].bal -= f.total; f.to.forEach(function(x){ g.players[x.i].bal += x.pay; });
-    var rec = {id:g.fineSeq, t: now || Date.now(), i:i, kind:f.kind, each:f.each, to:f.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:f.total, after:g.players[i].bal};
+    fineRoundsFix(g);
+    var rec = {id:g.fineSeq, t: now || Date.now(), r: g.round+1, i:i, kind:f.kind, each:f.each, to:f.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:f.total, after:g.players[i].bal};
     g.fines.push(rec);
     g.log.unshift({t:'벌금', r:g.round, txt:fineText(g, rec)});
     return rec;
@@ -334,10 +335,23 @@ var L = (function(){
   }
   function lastFine(g){ var f = g.fines||[]; return f.length ? f[f.length-1] : null; }
   // 그 사람의 가장 최근 벌금 (- 버튼으로 취소할 대상)
-  function lastFineOf(g, i){ var f = (g.fines||[]).filter(function(x){ return x.i===i; }); return f.length ? f[f.length-1] : null; }
-  function fineCounts(g){
+  // 벌금이 나온 판(f.r = 그때 진행 중이던 판 번호). 예전 저장분에는 없어서 기록(log)의 같은 문구 '벌금' 항목의 판 번호로 채움(못 찾으면 0 = 지난 판)
+  function fineRoundsFix(g){
+    var fs = g.fines||[]; if (!fs.some(function(f){ return f.r===undefined; })) return;
+    var logs = (g.log||[]).filter(function(e){ return e && e.t==='벌금'; }), used = [];
+    for (var k = fs.length-1; k>=0; k--){ var f = fs[k]; if (f.r!==undefined) continue;
+      var txt = fineText(g, f), m = -1;
+      for (var q = 0; q < logs.length; q++){ if (!used[q] && logs[q].txt===txt){ m = q; break; } }
+      if (m>=0){ used[m] = true; f.r = (num(logs[m].r)||0) + 1; } else f.r = 0; }
+  }
+  function fineIsCur(g, f){ fineRoundsFix(g); return f.r===g.round+1; }
+  // 그 사람의 이번 판 가장 최근 벌금 (- 버튼으로 취소할 대상). 지난 판 벌금은 - 로 취소 안 됨(벌금 내역에서 확인)
+  function lastFineOf(g, i){ fineRoundsFix(g); var f = (g.fines||[]).filter(function(x){ return x.i===i && x.r===g.round+1; }); return f.length ? f[f.length-1] : null; }
+  // cur=true: 이번 판 것만 (카드 표시, 다음 판이 되면 0)
+  function fineCounts(g, cur){
+    fineRoundsFix(g);
     return g.players.map(function(p,i){ var c = {n:0, swear:0, eng:0, fine:0, paid:0, got:0};
-      (g.fines||[]).forEach(function(f){ if (f.i===i){ c.n++; c[fineKind(f.kind)]++; c.paid += f.total; } f.to.forEach(function(x){ if (x.i===i) c.got += x.pay; }); });
+      (g.fines||[]).forEach(function(f){ if (cur && f.r!==g.round+1) return; if (f.i===i){ c.n++; c[fineKind(f.kind)]++; c.paid += f.total; } f.to.forEach(function(x){ if (x.i===i) c.got += x.pay; }); });
       return c; });
   }
   // ===== 멍청이: 카드 + 한 번마다 누른 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 멍청이 금액(기본 5,000원)을 즉시 줌 =====
@@ -641,7 +655,7 @@ var L = (function(){
       gws: (g.gws||[]).map(function(r){ return {id:r.id, t:r.t, r:r.r, i:r.i, n:r.n, each:r.each, to:r.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:r.total, dead:(r.dead||[]).slice(), seon:(r.seon===undefined?-1:r.seon)}; }),
       pks: (g.pks||[]).map(function(r){ return {id:r.id, t:r.t, r:r.r, i:r.i, level:r.level, points:r.points, ppp:r.ppp, each:r.each, to:r.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:r.total, dead:(r.dead||[]).slice(), src:r.src==='round'?'round':undefined}; }),
       fools: (g.fools||[]).map(function(r){ return {id:r.id, t:r.t, r:r.r, i:r.i, each:r.each, to:r.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:r.total}; }),
-      fines: (g.fines||[]).map(function(f){ return {id:f.id, t:f.t, i:f.i, kind:f.kind, each:f.each, to:f.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:f.total, after:f.after}; }),
+      fines: (g.fines||[]).map(function(f){ return {id:f.id, t:f.t, r:f.r, i:f.i, kind:f.kind, each:f.each, to:f.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:f.total, after:f.after}; }),
       log: g.log.map(function(l){ return {t:l.t, r:l.r, txt:l.txt}; }) } };
   }
   function num(x){ x=+x; return isFinite(x) ? x : 0; }
@@ -659,7 +673,7 @@ var L = (function(){
         dead:(Array.isArray(r&&r.dead)?r.dead:[]).map(function(x){ return Math.floor(num(x)); }).filter(function(x){ return x>=0 && x<s.players.length; }), src:(r&&r.src==='round')?'round':undefined}; }).filter(function(r){ return r.i>=0 && r.i<s.players.length; }),
       fools: (Array.isArray(s.fools)?s.fools:[]).map(function(r){ return {id:num(r&&r.id), t:num(r&&r.t), r:num(r&&r.r), i:Math.floor(num(r&&r.i)), each:num(r&&r.each), total:num(r&&r.total),
         to:(Array.isArray(r&&r.to)?r.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; })}; }).filter(function(r){ return r.i>=0 && r.i<s.players.length; }),
-      fines: (Array.isArray(s.fines)?s.fines:[]).map(function(f){ return {id:num(f&&f.id), t:num(f&&f.t), i:Math.floor(num(f&&f.i)), kind:fineKind(f&&f.kind), each:num(f&&f.each), total:num(f&&f.total), after:num(f&&f.after),
+      fines: (Array.isArray(s.fines)?s.fines:[]).map(function(f){ return {id:num(f&&f.id), t:num(f&&f.t), r:(f&&f.r!==undefined&&f.r!==null)?Math.floor(num(f.r)):undefined, i:Math.floor(num(f&&f.i)), kind:fineKind(f&&f.kind), each:num(f&&f.each), total:num(f&&f.total), after:num(f&&f.after),
         to:(Array.isArray(f&&f.to)?f.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; })}; }).filter(function(f){ return f.i>=0 && f.i<s.players.length; }),
       log: (Array.isArray(s.log)?s.log:[]).map(function(l){ return {t:String(l&&l.t||''), r:num(l&&l.r), txt:String(l&&l.txt||'')}; }) } };
   }
@@ -676,7 +690,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -711,7 +725,8 @@ function RULES(){
  '<p><b>광값</b>: 카드의 광팔이 +를 누를 때마다(광이나 쌍피 1개) 그 사람이 광팔이로 체크되고, 광팔이 본인과 선을 뺀 나머지(2·3번째 주자) 각자에게서 '+W(gp)+'씩 바로 받아요. 예: 4명이면 2명에게서 각 '+W(gp)+', 광팔이는 +'+W(gp*2)+'. 죽은 사람은 내지 않아요. 선은 판 끝 화면에서 고른 선, 없으면 직전 판 승리자예요(카드에 "선" 표시). 선을 바꾸면 이미 받은 광값을 자동으로 다시 계산해요(기록에 "재정산"). -는 가장 최근 1개를 정확히 환불해요(받은 돈을 이미 썼으면 막혀요). 판 끝 화면의 광값 +/-도 같은 정산이고, 판 반영 때 다시 계산하지 않아요.</p>'+
  '<p><b>충전</b>: 기본은 모두 0원으로 시작해요. 각자 카드의 +1만원, +5만원, +10만원 버튼 중 하나를 누르면 그 금액이 바로 들어가고 충전 내역에 금액별로 남아요. 잘못 눌렀으면 "방금 충전 취소"나 충전 내역의 취소 버튼으로 되돌려요(판에서 이미 쓴 칩은 취소 불가). 충전한 돈은 모두 딜러 계좌(장부)에 모여요.</p>'+
  '<p><b>멍청이</b>: 카드의 멍청이 +를 누를 때마다 그 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 '+W(L.foolAmtOf(g||{}))+'씩 바로 줘요(설정에서 금액 변경). 예: 4명이면 멍청이 -'+W(L.foolAmtOf(g||{})*3)+', 나머지 3명 각 +'+W(L.foolAmtOf(g||{}))+'. 멍청이 잔액이 모자라면 벌금처럼 있는 만큼만 내요. -는 그 사람의 가장 최근 1건을 정확히 되돌려요(받은 사람이 이미 썼으면 막혀요). 판 반영 때 다시 계산하지 않고, 기록 보기와 보기용 링크에 "몇 판"으로 남아요. 다음 판이 되면(판 반영·무효) 카드 횟수는 0으로 돌아가고, 지난 판 멍청이는 -로 취소할 수 없어요.</p>'+
- '<p><b>벌금</b>: 카드의 벌금 +를 누르면 바로 반영되고, -를 누르면 그 사람의 가장 최근 벌금 1건이 취소돼요. 누른 사람이 잔액 있는 나머지 사람 각자에게 '+W(L.fineAmtOf(g||{}))+'씩 줘요 (4명 모두 잔액 있으면 -'+W(L.fineAmtOf(g||{})*3)+', 나머지는 각 +'+W(L.fineAmtOf(g||{}))+'). 판 정산과 따로예요. 잔액이 모자라면 경고를 띄우고 가진 만큼만 내요(뻑과 같은 방식). 벌금 내역에서 건별 취소, 방금 낸 건 "방금 벌금 취소". 금액은 설정에서 바꿔요. 예전에 욕·영어로 기록된 건도 벌금 횟수에 합쳐 보여요.</p>'+
+ '<p><b>판마다 초기화</b>: 카드의 벌금·뻑·광팔이·멍청이 횟수와 광팔이 쉼·죽음 체크는 판을 반영하거나 무효로 해서 다음 판이 되면 0(해제)으로 돌아가요. 이미 오간 돈은 그대로고, 지난 판 것은 -로 취소할 수 없어요. 기록 보기·벌금 내역·뻑 내역에서 "몇 판"으로 확인하고, 내역 화면의 수정(벌금 건별 취소, 뻑 낸 사람 수정)은 그대로 할 수 있어요.</p>'+
+ '<p><b>벌금</b>: 카드의 벌금 +를 누르면 바로 반영되고, -를 누르면 그 사람의 이번 판 가장 최근 벌금 1건이 취소돼요. 누른 사람이 잔액 있는 나머지 사람 각자에게 '+W(L.fineAmtOf(g||{}))+'씩 줘요 (4명 모두 잔액 있으면 -'+W(L.fineAmtOf(g||{})*3)+', 나머지는 각 +'+W(L.fineAmtOf(g||{}))+'). 판 정산과 따로예요. 잔액이 모자라면 경고를 띄우고 가진 만큼만 내요(뻑과 같은 방식). 벌금 내역에서 건별 취소, 방금 낸 건 "방금 벌금 취소". 금액은 설정에서 바꿔요. 예전에 욕·영어로 기록된 건도 벌금 횟수에 합쳐 보여요.</p>'+
  '<p><b>승리자 표시</b>: 판을 반영하면 이긴 사람 카드에 "👑 승"이 붙고, 다음 판 시작 화면에서 그 사람이 선으로 미리 골라져 있어요(바꿀 수 있어요). 무효(나가리)면 표시와 선이 그대로예요.</p>'+
  '<p><b>뻑 입력</b>: 뻑은 카드에서 정산하지 않아요. 판 끝 → 점수 화면의 "뻑" 칸에서 뻑 먹은 사람의 +를 눌러 첫뻑/2연뻑/3연뻑을 고르면, 판 반영 때 한 번만 정산해요. 낼 사람은 판 끝에 확정된 대로(죽은 사람 제외, 광팔이는 설정 따름). 예전 버전에서 카드로 이미 정산한 뻑은 그대로 두고 다시 계산하지 않아요(점수 화면에서 "되돌리고 여기서 입력" 가능).</p>'+
  '<p><b>카드의 광팔이 체크</b>: 판 중에 바로 체크해 두면 판 끝 화면에 그대로 반영돼서 그 사람이 광팔이로 쉬고 광값을 넣을 수 있어요. 한 번에 한 명이고, 다시 누르면 풀려요. 판을 반영하거나 무효로 하면 자동으로 풀려요. 체크하지 않으면 마지막 주자 자동 판정 그대로예요.</p>'+
@@ -754,7 +769,7 @@ function orderNote(){
   return '';
 }
 function renderMain(){
-  var lc=L.lastCharge(g), flash='', lf=L.lastFine(g), fc=L.fineCounts(g);
+  var lc=L.lastCharge(g), flash='', lf=L.lastFine(g), fc=L.fineCounts(g,true);
   if (st.pkMsg){ flash+='<div class="flash pkflash" style="background:#1d3f8a">'+esc(st.pkMsg)+(st.pkWarn?'<br><span style="color:#ffd166">'+esc(st.pkWarn)+'</span>':'')+'</div>'; }
   if (lf && st.fineFlash===lf.id){
     flash='<div class="flash" style="background:#7a2e2e">'+esc(L.fineText(g,lf))+(st.fineWarn?'<br><span style="color:#ffd166">'+esc(st.fineWarn)+'</span>':'')+
@@ -855,7 +870,7 @@ function pkStep(i,d){
 }
 // 벌금 -: 그 사람의 가장 최근 벌금 1건 취소
 function fineMinus(i){
-  var f=L.lastFineOf(g,i); if(!f) return alert(g.players[i].name+' 님은 취소할 벌금이 없어요');
+  var f=L.lastFineOf(g,i); if(!f) return alert(g.players[i].name+' 님은 이번 판에 취소할 벌금이 없어요. 지난 판 벌금은 "벌금 내역"에서 확인해 주세요');
   cancelFine(f.id);
 }
 function doFine(i,kind){
@@ -878,7 +893,7 @@ function fineHtml(ro){
   h+='<h2 style="font-size:21px;margin-top:14px">시간순 내역</h2>';
   if (!(g.fines||[]).length) h+='<p>아직 벌금 내역이 없어요</p>';
   (g.fines||[]).forEach(function(f,k){
-    h+='<div class="log finelog">'+(k+1)+'. '+fmtTime(f.t)+' · '+esc(L.fineText(g,f))+
+    h+='<div class="log finelog">'+(k+1)+'. '+(f.r?f.r+'판 · ':'')+fmtTime(f.t)+' · '+esc(L.fineText(g,f))+
       (!ro?(L.canUndoFine(g,f.id)?' <button class="b3 small" style="width:auto;margin:0 0 0 6px;padding:6px 10px" onclick="cancelFine('+f.id+')">취소</button>':' <span style="color:#888;font-size:15px">(받은 돈을 이미 써서 취소 불가)</span>'):'')+'</div>';
   });
   return h+'</div>';
@@ -1219,7 +1234,7 @@ function renderRO(){
   var m=$('mult');
   if (g.nextMult>1){ m.textContent='다음 판 x'+g.nextMult; m.classList.remove('hide'); } else m.classList.add('hide');
   var h='<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+' · '+g.round+'판 진행</div></div><div class="grid">';
-  var fc=L.fineCounts(g);
+  var fc=L.fineCounts(g,true);
   g.players.forEach(function(p,i){
     var out=p.bal<=0;
     h+='<div class="card '+(out?'out':'')+'"><div class="nm">'+(L.lastWinner(g)===i?'<span class="winb">👑 승</span> ':'')+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
