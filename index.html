@@ -23,6 +23,7 @@ main{padding:12px;max-width:720px;margin:0 auto}
 button{font-size:22px;font-weight:700;border:0;border-radius:14px;padding:16px;width:100%;margin-top:10px;cursor:pointer}
 .b1{background:#e63946;color:#fff}.b2{background:#2a9d8f;color:#fff}.b3{background:#eee;color:#222}.b4{background:#457b9d;color:#fff}
 .small{font-size:17px;padding:10px;margin-top:6px}
+.chgrow3{display:flex;gap:5px;margin-top:8px}.chgrow3 button{margin:0;padding:10px 2px;font-size:16px;white-space:nowrap;flex:1}
 .row{display:flex;gap:8px}.row>*{flex:1}
 .box{background:#fff;color:#111;border-radius:16px;padding:16px;margin-bottom:12px}
 .box h2{margin:0 0 10px;font-size:24px}
@@ -54,9 +55,11 @@ summary{font-size:21px;font-weight:700}
 // ===== 순수 로직 (node 테스트 대상) =====
 var L = (function(){
   function won(n){ n = Math.round(n); return (n<0?'-':'') + Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '원'; }
-  // limit = 충전 1회 금액, start = 1인 시작 금액 (생략하면 충전 1회 금액으로 시작, 화면에서는 기본 0원)
-  function newGame(names, limit, ppp, start){
-    var st0 = (start===undefined || start===null) ? limit : Math.max(0, +start||0);
+  // 충전 버튼 금액 (고정): +1만원, +5만원, +10만원
+  var CHARGE_AMTS = [10000, 50000, 100000];
+  // limit = 기본 충전 금액(예전 데이터 호환용). 새 게임은 항상 모두 잔액 0원, 넣은 돈 0원에서 시작 (자동 충전 없음)
+  function newGame(names, limit, ppp){
+    var st0 = 0;
     return { limit: limit, ppp: ppp, start: st0, nextMult: 1, round: 0, gwangpal: true, ctScore: 10, giveupMult: 2, gwangPrice: 5000, gwangPayer: 'noSeon',
       players: names.map(function(n){ return {name:n, bal:st0, charges:st0>0?1:0, invested:st0}; }),
       log: [], chg: [], chgSeq: 0 };
@@ -182,8 +185,10 @@ var L = (function(){
     g.log.unshift({t:'무효', r:g.round, txt:'무효(나가리·쇼당)'+(doubleNext?', 다음 판 x'+g.nextMult:'')});
   }
   // 충전: 충전 내역(chg)에 시각·사람·금액·충전 후 잔액을 남긴다
-  function charge(g, i, now){
-    var p = g.players[i], amt = g.limit; p.bal += amt; p.charges++; p.invested += amt;
+  // amt 생략 시 g.limit (예전 방식 호환). 화면에서는 버튼 금액(1만·5만·10만)을 넘긴다
+  function charge(g, i, now, amt){
+    amt = (+amt > 0) ? Math.round(+amt) : g.limit;
+    var p = g.players[i]; p.bal += amt; p.charges++; p.invested += amt;
     if (!g.chg) g.chg = [];
     g.chgSeq = Math.max(g.chgSeq||0, g.chg.reduce(function(m,c){ return Math.max(m, c.id); }, 0)) + 1;
     var rec = {id:g.chgSeq, t: now || Date.now(), i:i, amt:amt, after:p.bal};
@@ -209,7 +214,10 @@ var L = (function(){
     var rows = g.players.map(function(p,i){
       var ch = (g.chg||[]).filter(function(c){ return c.i===i; });
       var sum = ch.reduce(function(s,c){ return s+c.amt; }, 0);
-      return {i:i, name:p.name, count:ch.length, charged:sum, start:p.invested-sum, invested:p.invested};
+      var byAmt = {}; ch.forEach(function(c){ byAmt[c.amt] = (byAmt[c.amt]||0) + 1; });
+      var amts = Object.keys(byAmt).map(Number).sort(function(a,b){ return a-b; });
+      return {i:i, name:p.name, count:ch.length, charged:sum, start:p.invested-sum, invested:p.invested,
+        byAmt: amts.map(function(a){ return {amt:a, n:byAmt[a]}; })};
     });
     var total = rows.reduce(function(s,r){ return s+r.charged; }, 0);
     return {rows:rows, total:total, startTotal: rows.reduce(function(s,r){ return s+r.start; }, 0), pool: pool(g)};
@@ -263,14 +271,15 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,roundNote:roundNote,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
 
 <script>
 // ===== 화면 =====
-var KEY='gostop_chip_v1', g=null, prev=null, view='main', st={}, RO=false, roT=0;
+// v2: 0원 시작 + 3종 충전 버튼. 예전 v1 저장분(시작 10만원 방식)은 읽지 않고 새 게임 화면으로 시작
+var KEY='gostop_chip_v2', g=null, prev=null, view='main', st={}, RO=false, roT=0;
 function save(){ if (RO) return; localStorage.setItem(KEY, JSON.stringify({g:g, prev:prev})); }
 function load(){ if (RO) return; try{ var d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.g){ g=d.g; prev=d.prev; if(!g.chg) g.chg=[]; } }catch(e){} }
 function snap(){ prev = JSON.stringify(g); }
@@ -294,7 +303,7 @@ function RULES(){
  '<p><b>4명 순서와 광팔이</b>: 선, 두 번째, 세 번째, 마지막 순서로 정해요. 두 번째와 세 번째가 모두 진행하면 마지막 주자가 광팔이로 쉬어요. 두 번째나 세 번째가 포기(죽음)하면 마지막 주자는 광팔이가 아니라 같이 쳐요. 자동으로 정해지고, 직접 고칠 수도 있어요. 5명 이상이면 광팔이를 직접 골라요. 설정에서 광팔이 규칙을 끌 수 있어요.</p>'+
  '<p><b>죽음(포기)</b>: 죽은 사람은 그 판 점수 정산에서 빠져요(내지도 받지도 않음). 광값도 어떤 설정에서든 내지 않아요.</p>'+
  '<p><b>광값</b>: 광팔이가 받은 패에서 광이나 쌍피 개수를 세요. 개수 x 개당 금액(지금 '+W(gp)+')을 광값 낼 사람 각각이 광팔이에게 줘요. 판에서 이기고 지는 것과 상관없어요. 지금 설정: <b>'+esc(who)+'</b> (설정에서 "선 포함 치는 사람 모두"로 바꿀 수 있어요). 예: 2개면 두 번째·세 번째 주자가 한 명당 '+W(gp*2)+'씩. 0개면 광값 없음.</p>'+
- '<p><b>충전</b>: 기본은 모두 0원으로 시작해요. 각자 카드의 충전 버튼을 누르면 충전 1회 금액(기본 100,000원)이 바로 들어가고 충전 내역에 남아요. 잘못 눌렀으면 "방금 충전 취소"나 충전 내역의 취소 버튼으로 되돌려요(판에서 이미 쓴 칩은 취소 불가). 충전한 돈은 모두 딜러 계좌(장부)에 모여요.</p>'+
+ '<p><b>충전</b>: 기본은 모두 0원으로 시작해요. 각자 카드의 +1만원, +5만원, +10만원 버튼 중 하나를 누르면 그 금액이 바로 들어가고 충전 내역에 금액별로 남아요. 잘못 눌렀으면 "방금 충전 취소"나 충전 내역의 취소 버튼으로 되돌려요(판에서 이미 쓴 칩은 취소 불가). 충전한 돈은 모두 딜러 계좌(장부)에 모여요.</p>'+
  '<p><b>잔액 한도</b>: 자기 잔액보다 많이 낼 수 없어요. 광값은 점수 정산을 하고 남은 잔액 안에서 내요. 잔액이 0원인 사람은 쉬는 중이라 판에 참여할 수 없고, 본인이 충전을 누르면 바로 다시 참여해요.</p>'+
  '<p><b>점수</b>: 고 보너스 빼고 난 점수를 넣어 주세요 (3명이 칠 때 3점부터 남).</p>'+
  SHAREHELP+'</details>';
@@ -314,8 +323,7 @@ function renderSetup(){
   for (var k=2;k<=6;k++) h+='<button class="pick small '+(k===n?'on':'')+'" onclick="st.n='+k+';render()">'+k+'명</button>';
   h+='</div>';
   for (var i=0;i<n;i++) h+='<input type="text" id="nm'+i+'" placeholder="'+(i+1)+'번 이름 (예: '+['철수','영희','민수','지영','현우','수진'][i]+')" value="'+esc((st.names||[])[i]||'')+'" style="margin-top:8px" oninput="(st.names=st.names||[])['+i+']=this.value">';
-  h+='<p>1인 시작 금액 (원, 기본 0원: 시작 후 각자 충전 버튼으로 충전)</p><input type="number" id="st0" value="'+(st.st0||0)+'" oninput="st.st0=+this.value">';
-  h+='<p>충전 1회 금액 (원)</p><input type="number" id="lim" value="'+(st.lim||100000)+'" oninput="st.lim=+this.value">';
+  h+='<p class="note">모두 0원으로 시작해요. 시작 후 각자 카드의 +1만원·+5만원·+10만원 버튼으로 충전해요.</p>';
   h+='<p>1점당 금액 (원)</p><input type="number" id="ppp" value="'+(st.ppp||100)+'" oninput="st.ppp=+this.value">';
   h+='<button class="b1" onclick="start()">게임 시작</button></div>'+RULES();
   app.innerHTML=h;
@@ -323,14 +331,14 @@ function renderSetup(){
 function start(){
   var n=st.n||4, names=[];
   for (var i=0;i<n;i++){ var v=$('nm'+i).value.trim()||((i+1)+'번'); names.push(v); }
-  var lim=+$('lim').value, ppp=+$('ppp').value, s0=+$('st0').value;
-  if (!(lim>0) || !(ppp>0) || !(s0>=0)) return alert('금액을 확인해 주세요');
-  g=L.newGame(names, lim, ppp, s0); prev=null; view='main'; st={}; render();
+  var ppp=+$('ppp').value;
+  if (!(ppp>0)) return alert('금액을 확인해 주세요');
+  g=L.newGame(names, 100000, ppp); prev=null; view='main'; st={}; render();
 }
 
 function orderNote(){
   var act=actList().length, n=g.players.length;
-  if (act<2) return '<p class="note">잔액 있는 사람이 2명 이상이어야 판을 시작할 수 있어요. 각자 카드의 충전 버튼을 눌러 주세요.</p>';
+  if (act<2) return '<p class="note">잔액 있는 사람이 2명 이상이어야 판을 시작할 수 있어요. 각자 카드의 +1만원·+5만원·+10만원 버튼으로 충전해 주세요.</p>';
   if (g.gwangpal!==false && n>=4 && act<4) return '<p class="note">지금 잔액 있는 사람은 '+act+'명이에요. 0원인 사람은 이번 판에 못 껴요. 4명 모두 충전하면 순서 정하기(광팔이 자동 판정)가 나와요.</p>';
   return '';
 }
@@ -340,13 +348,13 @@ function renderMain(){
     flash='<div class="flash">'+esc(g.players[lc.i].name)+' +'+W(lc.amt)+' 충전 완료 (잔액 '+W(g.players[lc.i].bal)+')'+
       (L.canUndoCharge(g,lc.id)?'<button class="b3 small" onclick="cancelCharge('+lc.id+')">방금 충전 취소</button>':'')+'</div>';
   }
-  var h=flash+'<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+' · 충전 1회 '+W(g.limit)+'</div></div><div class="grid">';
+  var h=flash+'<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+'</div></div><div class="grid">';
   g.players.forEach(function(p,i){
     var out=p.bal<=0;
     h+='<div class="card '+(out?'out':'')+'"><div class="nm">'+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
       '<div class="sub">넣은 돈 '+W(p.invested)+' ('+p.charges+'회)</div>'+
       (out?'<div class="tag">쉬는 중 (충전하면 참여)</div>':'')+
-      '<button class="b2 small chg" onclick="doCharge('+i+')">+'+W(g.limit)+' 충전</button></div>';
+      '<div class="chgrow3">'+L.CHARGE_AMTS.map(function(a){ return '<button class="b2 chg" data-amt="'+a+'" onclick="doCharge('+i+','+a+')">+'+(a/10000)+'만원</button>'; }).join('')+'</div></div>';
   });
   h+='</div>'+orderNote()+'<button class="b1 big" onclick="toS1()">판 끝! 점수 넣기</button>'+
    '<div class="row"><button class="b3 small" onclick="doVoid()">무효 (나가리·쇼당)</button><button class="b3 small" onclick="undo()">방금 것 되돌리기</button></div>'+
@@ -355,8 +363,8 @@ function renderMain(){
    '<button class="b4" onclick="view=\'end\';render()">끝내고 정산하기</button>'+RULES();
   app.innerHTML=h;
 }
-function doCharge(i){
-  snap(); var rec=L.charge(g,i); st={flash:rec.id}; render();
+function doCharge(i,amt){
+  snap(); var rec=L.charge(g,i,undefined,amt); st={flash:rec.id}; render();
 }
 function cancelCharge(id){
   var c=(g.chg||[]).filter(function(x){return x.id===id;})[0]; if(!c) return;
@@ -371,7 +379,7 @@ function chgHtml(ro){
   var s=L.chargeSummary(g), h='<div class="box"><h2>충전 내역</h2>';
   h+='<div class="pool" style="margin-bottom:10px"><div class="lab">총 충전액</div><div class="val">'+W(s.total)+'</div><div class="lab">딜러 장부 합계 '+W(s.pool)+(s.startTotal?' (시작 금액 '+W(s.startTotal)+' 포함)':'')+'</div></div>';
   h+='<h2 style="font-size:21px">사람별 누적 충전액</h2>';
-  s.rows.forEach(function(r){ h+='<div class="calc"><b>'+esc(r.name)+'</b> '+W(r.charged)+' ('+r.count+'회)'+(r.start?'<br><span style="font-size:16px">시작 '+W(r.start)+' + 충전 '+W(r.charged)+' = 넣은 돈 '+W(r.invested)+'</span>':'')+'</div>'; });
+  s.rows.forEach(function(r){ h+='<div class="calc"><b>'+esc(r.name)+'</b> '+W(r.charged)+' ('+r.count+'회)'+(r.byAmt.length?'<br><span style="font-size:16px">'+r.byAmt.map(function(b){ return (b.amt%10000===0?(b.amt/10000)+'만원':W(b.amt))+' x'+b.n; }).join(' · ')+'</span>':'')+(r.start?'<br><span style="font-size:16px">시작 '+W(r.start)+' + 충전 '+W(r.charged)+' = 넣은 돈 '+W(r.invested)+'</span>':'')+'</div>'; });
   h+='<h2 style="font-size:21px;margin-top:14px">시간순 내역</h2>';
   if (!(g.chg||[]).length) h+='<p>아직 충전 내역이 없어요</p>';
   (g.chg||[]).forEach(function(c,k){
@@ -560,7 +568,6 @@ function renderLog(){
 }
 function renderSet(){
   var h='<div class="box"><h2>설정</h2><p>1점당 금액 (원)</p><input type="number" id="sp" value="'+g.ppp+'">'+
-   '<p>충전 1회 금액 (원, 카드의 충전 버튼 금액)</p><input type="number" id="sl" value="'+g.limit+'">'+
    '<p>총통 승 점수 (점)</p><input type="number" id="sct" value="'+(g.ctScore||10)+'">'+
    '<p>총통 포기 진행 배수</p><select id="sgu" style="font-size:22px;padding:10px;width:100%;border-radius:10px"><option value="2" '+(g.giveupMult!==4?'selected':'')+'>2배 (폭탄)</option><option value="4" '+(g.giveupMult===4?'selected':'')+'>4배 (흔들기+폭탄)</option></select>'+
    '<label class="ck"><input type="checkbox" id="sg" '+(g.gwangpal!==false?'checked':'')+'>4명 이상이면 광팔이 고르기 (3명만 침)</label>'+
@@ -571,7 +578,7 @@ function renderSet(){
    '<button class="b3" onclick="view=\'main\';render()">돌아가기</button></div>';
   app.innerHTML=h;
 }
-function saveSet(){ var p=+$('sp').value, l=+$('sl').value, c=+$('sct').value; if(!(p>0)||!(l>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); snap(); g.gwangPrice=gp; g.gwangPayer=$('sgw').value==='all'?'all':'noSeon'; g.ppp=p; g.limit=l; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
+function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); snap(); g.gwangPrice=gp; g.gwangPayer=$('sgw').value==='all'?'all':'noSeon'; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
 function resetAll(){ if(!confirm('모든 기록을 지우고 새로 시작할까요?')) return; if(!confirm('정말 지울까요? 되돌릴 수 없어요')) return; g=null; prev=null; localStorage.removeItem(KEY); view='main'; render(); }
 
 function renderEnd(){
@@ -619,7 +626,7 @@ function renderRO(){
   var bar=$('robar'); bar.textContent='보기 전용 (마지막 갱신 '+fmtTime(roT)+')'; bar.classList.remove('hide');
   var m=$('mult');
   if (g.nextMult>1){ m.textContent='다음 판 x'+g.nextMult; m.classList.remove('hide'); } else m.classList.add('hide');
-  var h='<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+' · 충전 1회 '+W(g.limit)+' · '+g.round+'판 진행</div></div><div class="grid">';
+  var h='<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+' · '+g.round+'판 진행</div></div><div class="grid">';
   g.players.forEach(function(p){
     var out=p.bal<=0;
     h+='<div class="card '+(out?'out':'')+'"><div class="nm">'+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
