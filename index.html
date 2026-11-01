@@ -129,9 +129,10 @@ var L = (function(){
     var gw = (res.gwang||[]).filter(function(x){return x.pay>0;});
     if (gw.length) extra += ' / 광값 '+gw[0].count+'개 x '+won(gw[0].price)+': '+gw.map(function(x){return g.players[x.from].name+' → '+g.players[x.to].name+' '+won(x.pay);}).join(', ');
     var rn = (opt.restNames&&opt.restNames.length?' / 광팔이 '+opt.restNames.join(','):'');
+    if (res.chongtong && (res.ppeok||[]).length) extra += ppeokNote(g, res);
     if (res.chongtong) return g.players[res.winner].name+' 총통 승 ('+res.lines[0].score+'점)'+rn+' / '+detail+extra;
-    var pt = ppeokText(opt);
-    return g.players[res.winner].name+' '+opt.score+'점 승'+(opt.giveup?' (총통 포기)':'')+(opt.go?' ('+opt.go+'고)':'')+(pt?' ('+pt+')':'')+rn+' / '+detail+extra;
+    extra += ppeokNote(g, res);
+    return g.players[res.winner].name+' '+opt.score+'점 승'+(opt.giveup?' (총통 포기)':'')+(opt.go?' ('+opt.go+'고)':'')+rn+' / '+detail+extra;
   }
   // 고 점수: 1고 +1점, 2고 +2점 (점수에 먼저 더함), 3고부터 점수 그대로 x2, 4고 x4, 5고 x8 ...
   function goScore(base, go){
@@ -150,34 +151,64 @@ var L = (function(){
     });
     lines.forEach(function(x){ var bal = g.players[x.idx].bal; x.pay = Math.min(x.raw, Math.max(0, bal)); x.capped = x.pay < x.raw; });
     var res = { winner:winner, chongtong:true, lines:lines, total: lines.reduce(function(s,x){return s+x.pay;},0) };
-    res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); return res;
+    res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); res.ppeok = ppeokCalc(g, res, opt.ppeoks, opt.seated); return res;
   }
   // 총통 포기 진행 배수: 2배(폭탄) 또는 4배(흔들기+폭탄)
   // 뻑: 첫뻑 = 승자 점수에 +N점(기본 3점, 고 가산과 같은 단계에서 먼저 더함). 2연뻑·3연뻑 = 진 사람 전원 xM(기본 2배). 2연뻑·3연뻑은 둘 중 하나만
   function ppeokScoreOf(g){ return num(g.ppeokScore)>0 ? num(g.ppeokScore) : 3; }
   function ppeokMultOf(g){ return num(g.ppeokMult)>0 ? num(g.ppeokMult) : 2; }
-  function ppeokOpt(opt){ var p3=!!opt.ppeok3; return {p1:!!opt.ppeok1, p2:!!opt.ppeok2 && !p3, p3:p3}; }
-  function ppeokText(opt){ var p=ppeokOpt(opt||{}), a=[]; if(p.p1) a.push('첫뻑'); if(p.p2) a.push('2연뻑'); if(p.p3) a.push('3연뻑'); return a.join('·'); }
+  // 뻑(참가자별, 별도 정산): 뻑 먹은 사람은 승패와 상관없이 나머지 사람 각자에게 (뻑 점수 x 점당 금액)을 받는다
+  // 단계 1=첫뻑(기본 3점), 2=2연뻑(x2 = 6점), 3=3연뻑(x2 x2 = 12점). 예전 저장분의 ppeokScore·ppeokMult 값도 그대로 기본 점수·배수로 쓴다
+  var PPEOK_NAMES = ['', '첫뻑', '2연뻑', '3연뻑'];
+  function ppeokPoints(g, level){ level = Math.floor(+level||0); if (level<1||level>3) return 0; return ppeokScoreOf(g) * Math.pow(ppeokMultOf(g), level-1); }
+  // 낼 사람: 'seated'(기본) = 이번 판에 앉은 전원(잔액 있는 사람, 광팔이·죽은 사람 포함) / 'play' = 실제로 친 사람만
+  function ppeokPayerMode(g){ return g.ppeokPayer==='play' ? 'play' : 'seated'; }
+  function ppeokPayerText(g){ return ppeokPayerMode(g)==='play' ? '이번 판에 친 사람만 (광팔이·죽은 사람 제외)' : '이번 판에 앉은 전원 (광팔이·죽은 사람 포함)'; }
+  // 점수 정산·광값 뒤 남은 잔액 안에서만 낸다 (잔액 한도). seated: 판 시작 때 잔액 있던 사람 번호들
+  function ppeokCalc(g, res, ppeoks, seated){
+    var play = [res.winner].concat(res.lines.map(function(x){ return x.idx; }));
+    if (!seated) seated = g.players.map(function(p,i){return i;}).filter(function(i){ return g.players[i].bal>0; });
+    var payers = ppeokPayerMode(g)==='play' ? play : seated;
+    var bal = g.players.map(function(p){ return p.bal; });
+    res.lines.forEach(function(x){ bal[x.idx] -= x.pay; }); bal[res.winner] += res.total;
+    (res.gwang||[]).forEach(function(x){ bal[x.from] -= x.pay; bal[x.to] += x.pay; });
+    var out = [];
+    (ppeoks||[]).forEach(function(e){
+      var pts = ppeokPoints(g, e.level); if (!pts || play.indexOf(e.idx)<0) return;
+      var each = pts * g.ppp;
+      payers.filter(function(i){ return i!==e.idx; }).forEach(function(i){
+        var pay = Math.min(each, Math.max(0, bal[i])); bal[i] -= pay; bal[e.idx] += pay;
+        out.push({from:i, to:e.idx, level:Math.floor(+e.level), points:pts, each:each, pay:pay, capped: pay<each});
+      });
+    });
+    return out;
+  }
+  function ppeokNote(g, res){
+    var by = {}, ord = [];
+    (res.ppeok||[]).forEach(function(x){ if (!by[x.to]){ by[x.to]=[]; ord.push(x.to); } by[x.to].push(x); });
+    return ord.map(function(to){
+      var xs = by[to], x0 = xs[0], cap = xs.filter(function(x){ return x.capped; });
+      return ' / '+g.players[to].name+' '+PPEOK_NAMES[x0.level]+' +각 '+won(x0.each)+'씩'+(cap.length?' ('+cap.map(function(x){ return g.players[x.from].name+' 잔액 부족 '+won(x.pay); }).join(', ')+')':'');
+    }).join('');
+  }
   function giveupInfo(g){ var m = g.giveupMult===4 ? 4 : 2; return [m, m===4 ? '총통 포기: 흔들기+폭탄' : '총통 포기: 폭탄']; }
   function calcRound(g, winner, opt){
     if (opt.chongtong) return chongtongRound(g, winner, opt);
     var gu = opt.giveup ? giveupInfo(g) : null;
-    var pp = ppeokOpt(opt), pAdd = pp.p1 ? ppeokScoreOf(g) : 0, pm = ppeokMultOf(g), pk = pp.p2 ? [pm,'2연뻑'] : (pp.p3 ? [pm,'3연뻑'] : null);
-    var gs = goScore(opt.score + pAdd, opt.go||0);
-    var common = gs.mul * Math.pow(2, (opt.shake||0) + (opt.bomb||0)) * (g.nextMult||1) * (gu ? gu[0] : 1) * (pk ? pk[0] : 1);
+    var gs = goScore(opt.score, opt.go||0);
+    var common = gs.mul * Math.pow(2, (opt.shake||0) + (opt.bomb||0)) * (g.nextMult||1) * (gu ? gu[0] : 1);
     var lines = opt.losers.map(function(l){
       var m = common, f = [];
       if (gs.mul>1) f.push([gs.mul, opt.go+'고']);
       for (var k=0;k<(opt.shake||0);k++) f.push([2,'흔들기']);
       for (var k2=0;k2<(opt.bomb||0);k2++) f.push([2,'폭탄']);
       if (gu) f.push(gu);
-      if (pk) f.push(pk);
       if ((g.nextMult||1)>1) f.push([g.nextMult,'지난 판 무효']);
       if (l.pi){ m*=2; f.push([2,'피박']); }
       if (l.gwang){ m*=2; f.push([2,'광박']); }
       if (l.meong){ m*=2; f.push([2,'멍박']); }
       var base = gs.score * g.ppp, raw = base * m;
-      var addG = (opt.go===1||opt.go===2), sc = (addG||pAdd) ? gs.score+'점('+opt.score+'점'+(pAdd?'+첫뻑 '+pAdd+'점':'')+(addG?'+'+opt.go+'고':'')+')' : gs.score+'점';
+      var sc = (opt.go===1||opt.go===2) ? gs.score+'점('+opt.score+'점+'+opt.go+'고)' : gs.score+'점';
       var formula = sc+' x '+won(g.ppp)+' = '+won(base) + (f.length ? f.map(function(x){return ', x'+x[0]+'('+x[1]+')';}).join('') + ' = '+won(raw) : '');
       return { idx:l.idx, score:gs.score, mult:m, parts:f.map(function(x){return x[1]+' x'+x[0];}), formula:formula, raw: raw };
     });
@@ -193,12 +224,13 @@ var L = (function(){
       x.capped = x.pay < x.raw;
     });
     var res = { winner:winner, lines:lines, total: lines.reduce(function(s,x){return s+x.pay;},0) };
-    res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); return res;
+    res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); res.ppeok = ppeokCalc(g, res, opt.ppeoks, opt.seated); return res;
   }
   function applyRound(g, res, note){
     res.lines.forEach(function(x){ g.players[x.idx].bal -= x.pay; });
     g.players[res.winner].bal += res.total;
     (res.gwang||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
+    (res.ppeok||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
     g.round++; g.nextMult = 1;
     g.log.unshift({t:'판', r:g.round, txt: note || (g.players[res.winner].name+' 승, '+won(res.total)+' 받음')});
   }
@@ -267,7 +299,7 @@ var L = (function(){
   function unb64u(str){ str=String(str).replace(/-/g,'+').replace(/_/g,'/'); while (str.length%4) str+='='; var s=atob(str), b=new Uint8Array(s.length); for (var i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
   function pipeBytes(bytes, ts){ return new Response(new Blob([bytes]).stream().pipeThrough(ts)).arrayBuffer().then(function(ab){ return new Uint8Array(ab); }); }
   function packState(g, now){
-    return { v:1, t: now || Date.now(), g: { limit:g.limit, ppp:g.ppp, nextMult:g.nextMult, round:g.round, gwangpal:g.gwangpal, ctScore:g.ctScore, giveupMult:g.giveupMult, gwangPrice:gwangPriceOf(g), gwangPayer:gwangMode(g), ppeokScore:ppeokScoreOf(g), ppeokMult:ppeokMultOf(g),
+    return { v:1, t: now || Date.now(), g: { limit:g.limit, ppp:g.ppp, nextMult:g.nextMult, round:g.round, gwangpal:g.gwangpal, ctScore:g.ctScore, giveupMult:g.giveupMult, gwangPrice:gwangPriceOf(g), gwangPayer:gwangMode(g), ppeokScore:ppeokScoreOf(g), ppeokMult:ppeokMultOf(g), ppeokPayer:ppeokPayerMode(g),
       players: g.players.map(function(p){ return {name:p.name, bal:p.bal, charges:p.charges, invested:p.invested}; }),
       chg: (g.chg||[]).map(function(c){ return {id:c.id, t:c.t, i:c.i, amt:c.amt, after:c.after}; }),
       log: g.log.map(function(l){ return {t:l.t, r:l.r, txt:l.txt}; }) } };
@@ -276,7 +308,7 @@ var L = (function(){
   function cleanState(d){
     if (!d || d.v!==1 || !d.g || !Array.isArray(d.g.players) || !d.g.players.length) throw new Error('잘못된 링크');
     var s=d.g;
-    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2,
+    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokPayer:s.ppeokPayer==='play'?'play':'seated',
       players: s.players.map(function(p){ return {name:String(p&&p.name||''), bal:num(p&&p.bal), charges:num(p&&p.charges), invested:num(p&&p.invested)}; }),
       chg: (Array.isArray(s.chg)?s.chg:[]).map(function(c){ return {id:num(c&&c.id), t:num(c&&c.t), i:Math.floor(num(c&&c.i)), amt:num(c&&c.amt), after:num(c&&c.after)}; }).filter(function(c){ return c.i>=0 && c.i<s.players.length; }),
       log: (Array.isArray(s.log)?s.log:[]).map(function(l){ return {t:String(l&&l.t||''), r:num(l&&l.r), txt:String(l&&l.txt||'')}; }) } };
@@ -294,7 +326,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokText:ppeokText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -322,7 +354,7 @@ function RULES(){
  '<p><b>고박</b>: 고를 불렀다가 다른 사람이 이기면, 고 부른 사람이 다른 진 사람 몫까지 혼자 다 내요.</p>'+
  '<p><b>총통 승</b>: 처음 받은 손패에 같은 월 4장이 있으면 바로 이겨요. 승자만 고르면 정해진 점수(기본 10점, 설정에서 변경) x 점당 금액을 진 사람 전원이 내요. 고·흔들기·폭탄·박·지난 판 무효 배수는 적용하지 않아요. 광팔이·죽음·광값 규칙은 똑같아요.</p>'+
  '<p><b>총통 포기하고 진행</b>: 총통을 들고도 그냥 판을 이어 가면, 그 판은 폭탄으로 쳐서 2배만 적용해요(기본). 설정에서 4배를 고르면 흔들기+폭탄을 합쳐 4배로 계산해요. 이때 흔들기·폭탄 횟수는 따로 넣지 마세요.</p>'+
- '<p><b>뻑</b>: 첫뻑은 이긴 사람 점수에 +'+L.ppeokScoreOf(g||{})+'점을 먼저 더해요(고 보너스와 같은 단계, 3고부터 배수는 더한 점수에 적용). 2연뻑, 3연뻑은 진 사람 전원 x'+L.ppeokMultOf(g||{})+'(흔들기·폭탄처럼). 2연뻑과 3연뻑은 둘 중 하나만 체크돼요. 첫뻑과 함께 체크하면 같이 적용돼요. 총통 승에는 적용 안 해요. 점수·배수는 설정에서 바꿀 수 있어요.</p>'+
+ '<p><b>뻑</b>: 점수 넣는 화면에서 친 사람마다 없음/첫뻑/2연뻑/3연뻑을 골라요. 뻑 먹은 사람은 이기고 지는 것과 상관없이 나머지 사람 각자에게 뻑 점수 x 점당 금액을 따로 받아요. 첫뻑 '+L.ppeokPoints(g||{},1)+'점, 2연뻑 '+L.ppeokPoints(g||{},2)+'점, 3연뻑 '+L.ppeokPoints(g||{},3)+'점 (단계마다 x'+L.ppeokMultOf(g||{})+'). 낼 사람 기본: 이번 판에 앉은 전원(광팔이·죽은 사람 포함, 설정에서 "친 사람만"으로 변경). 여러 명이 뻑을 먹으면 각각 정산해요. 점수 정산과 광값을 먼저 하고 남은 잔액 안에서 내요. 총통 승 판에는 없어요.</p>'+
  '<p><b>무효(나가리·쇼당)</b>: 돈이 오가지 않고, 다음 판 점수가 2배가 돼요 (끌 수 있음).</p>'+
  '<p><b>선과 광팔이</b>: 판마다 선만 고르면 순서(두 번째, 세 번째, 마지막)는 사람 목록 순서대로 정해져요. 4명이면 "광팔이 있음"이 기본으로 체크돼 있고, 마지막 주자가 광팔이로 쉬어요(두 번째·세 번째는 진행). 체크를 끄면 두 번째·세 번째 중 죽은 사람을 체크해 주세요. 설정에서 광팔이 규칙을 끌 수 있어요.</p>'+
  '<p><b>죽음(포기)</b>: 죽은 사람은 그 판 점수 정산에서 빠져요(내지도 받지도 않음). 광값도 어떤 설정에서든 내지 않아요.</p>'+
@@ -485,30 +517,37 @@ function checkS1(){
 }
 function toCT(){
   var losers=checkS1(); if(!losers) return;
-  st.ct=true; st.lo={}; losers.forEach(function(i){ st.lo[i]={}; });
+  st.ct=true; st.pk={}; st.lo={}; losers.forEach(function(i){ st.lo[i]={}; });
   view='s3'; render();
 }
 function toS2(){
   var losers=checkS1(); if(!losers) return;
   st.ct=false;
-  st.score=st.score||3; st.go=st.go||0; st.shake=st.shake||0; st.bomb=st.bomb||0; st.giveup=!!st.giveup; st.p1=!!st.p1; st.p2=!!st.p2; st.p3=!!st.p3; st.lo={};
+  st.score=st.score||3; st.go=st.go||0; st.shake=st.shake||0; st.bomb=st.bomb||0; st.giveup=!!st.giveup; var pk0=st.pk||{}; st.pk={}; [st.w].concat(losers).forEach(function(i){ if(pk0[i]) st.pk[i]=pk0[i]; }); st.lo={};
   losers.forEach(function(i){ st.lo[i]={pi:false,gwang:false,meong:false,gobak:false}; });
   view='s2'; render();
 }
 function stepper(key,label,min){
   return '<p><b>'+label+'</b></p><div class="stepper"><button class="b3" onclick="st.'+key+'=Math.max('+min+',st.'+key+'-1);render()">-</button><span>'+st[key]+'</span><button class="b3" onclick="st.'+key+'++;render()">+</button></div>';
 }
-// 2연뻑·3연뻑은 둘 중 하나만 (라디오처럼)
-function setPk(k,on){ st['p'+k]=!!on; if(on) st['p'+(k===2?3:2)]=false; render(); }
+// 뻑: 친 사람마다 없음/첫뻑/2연뻑/3연뻑 중 하나. 승패와 상관없이 따로 정산
+function setPk(i,lv){ if(lv>0) st.pk[i]=lv; else delete st.pk[i]; render(); }
+function ppeokBox(){
+  var who=[st.w].concat(Object.keys(st.lo).map(Number)), h='<div class="box ppeokbox"><h2>뻑 (사람별, 따로 정산)</h2>'+
+    '<p style="font-size:16px;color:#555">뻑 먹은 사람은 이기고 지는 것과 상관없이 나머지 사람 각자에게 뻑 점수 x '+W(g.ppp)+'을 받아요. 낼 사람: <b>'+esc(L.ppeokPayerText(g))+'</b></p>';
+  who.forEach(function(i){
+    var lv=st.pk[i]||0;
+    h+='<p><b>'+esc(g.players[i].name)+'</b></p><div class="row pkrow" data-i="'+i+'">';
+    [0,1,2,3].forEach(function(k){ h+='<button class="pick small pk '+(lv===k?'on':'')+'" data-lv="'+k+'" onclick="setPk('+i+','+k+')">'+(k?L.PPEOK_NAMES[k]+' '+L.ppeokPoints(g,k)+'점':'없음')+'</button>'; });
+    h+='</div>';
+  });
+  return h+'</div>';
+}
 function renderS2(){
   var h='<div class="box"><h2>2단계: 점수와 옵션</h2><p>'+esc(g.players[st.w].name)+' 님 승</p>'+
     '<p><b>점수</b> (고 보너스 빼고)</p><input type="number" id="sc" value="'+st.score+'" oninput="st.score=+this.value">'+
     stepper('go','고 몇 번?',0)+stepper('shake','흔들기 몇 번?',0)+stepper('bomb','폭탄 몇 번?',0)+
-    '<label class="ck"><input type="checkbox" '+(st.giveup?'checked':'')+' onchange="st.giveup=this.checked">총통 포기하고 진행 (x'+L.giveupInfo(g)[0]+', '+L.giveupInfo(g)[1].replace('총통 포기: ','')+')</label>'+
-    '<p style="margin-top:12px"><b>뻑</b></p>'+
-    '<label class="ck"><input type="checkbox" id="pk1" '+(st.p1?'checked':'')+' onchange="st.p1=this.checked">첫뻑 (+'+L.ppeokScoreOf(g)+'점)</label>'+
-    '<label class="ck"><input type="checkbox" id="pk2" '+(st.p2?'checked':'')+' onchange="setPk(2,this.checked)">2연뻑 (x'+L.ppeokMultOf(g)+')</label>'+
-    '<label class="ck"><input type="checkbox" id="pk3" '+(st.p3?'checked':'')+' onchange="setPk(3,this.checked)">3연뻑 (x'+L.ppeokMultOf(g)+')</label></div>';
+    '<label class="ck"><input type="checkbox" '+(st.giveup?'checked':'')+' onchange="st.giveup=this.checked">총통 포기하고 진행 (x'+L.giveupInfo(g)[0]+', '+L.giveupInfo(g)[1].replace('총통 포기: ','')+')</label></div>'+ppeokBox();
   Object.keys(st.lo).forEach(function(i){
     var o=st.lo[i];
     h+='<div class="box"><h2>'+esc(g.players[i].name)+' (잔액 '+W(g.players[i].bal)+')</h2>';
@@ -529,7 +568,8 @@ function toS3(){
 }
 function curSeon(){ return st.seon!==undefined ? st.seon : (st.order ? st.order[0] : undefined); }
 function curRes(){
-  return L.calcRound(g, st.w, {chongtong:!!st.ct, giveup:!!st.giveup, score:st.score, go:st.go, shake:st.shake, bomb:st.bomb, ppeok1:!!st.p1, ppeok2:!!st.p2, ppeok3:!!st.p3,
+  return L.calcRound(g, st.w, {chongtong:!!st.ct, giveup:!!st.giveup, score:st.score, go:st.go, shake:st.shake, bomb:st.bomb, 
+    ppeoks: st.ct ? [] : Object.keys(st.pk||{}).map(function(i){ return {idx:+i, level:st.pk[i]}; }), seated: actList(),
     losers:Object.keys(st.lo).map(function(i){ var o=st.lo[i]; return {idx:+i, pi:o.pi, gwang:o.gwang, meong:o.meong, gobak:o.gobak}; }),
     seon: curSeon(),
     gwangs:Object.keys(st.rest||{}).map(function(i){ return {idx:+i, count:(st.gw||{})[i]||0}; })});
@@ -554,6 +594,12 @@ function renderS3(){
     var gt=r.gwang.reduce(function(s,x){return s+x.pay;},0);
     h+='<p class="big" style="font-size:24px">광팔이 받는 광값: '+W(gt)+'</p>';
   } else if (Object.keys(st.rest||{}).length) h+='<p class="calc">광값: 0개라 없음</p>';
+  if ((r.ppeok||[]).length){
+    h+='<h2 style="margin-top:14px">뻑 (따로 정산, 낼 사람: '+esc(L.ppeokPayerText(g))+')</h2>';
+    r.ppeok.forEach(function(x){ h+='<div class="calc pkcalc">'+esc(g.players[x.from].name)+' → '+esc(g.players[x.to].name)+': '+L.PPEOK_NAMES[x.level]+' '+x.points+'점 x '+W(g.ppp)+' = <b>'+W(x.pay)+'</b>'+(x.capped?'<br><span class="warn">잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>'; });
+    var byTo={}; r.ppeok.forEach(function(x){ byTo[x.to]=(byTo[x.to]||0)+x.pay; });
+    Object.keys(byTo).forEach(function(i){ h+='<p class="big" style="font-size:22px">'+esc(g.players[i].name)+' 뻑으로 받는 돈: '+W(byTo[i])+'</p>'; });
+  }
   var bef=0, aft=0; g.players.forEach(function(p){bef+=p.bal;}); var tmp=JSON.parse(JSON.stringify(g)); L.applyRound(tmp, r); tmp.players.forEach(function(p){aft+=p.bal;});
   h+='<p style="font-size:16px;color:#2a9d8f">딜러 계좌 확인: 반영 전 칩 합계 '+W(bef)+' = 반영 후 '+W(aft)+(bef===aft?' (일치)':' (불일치)')+'</p>';
   h+='<button class="b1" onclick="applyIt()">이대로 반영</button><button class="b3" onclick="view=st.ct?\'s1\':\'s2\';render()">뒤로 (고치기)</button></div>';
@@ -564,7 +610,7 @@ function applyIt(){
   var rn=Object.keys(st.rest||{}).map(function(i){return g.players[i].name;});
   var dn=Object.keys(st.dead||{}).map(function(i){return g.players[i].name;});
   if (st.order) g.order=st.order.slice();
-  L.applyRound(g, r, L.roundNote(g, r, {score:st.score, go:st.go, giveup:!st.ct&&st.giveup, ppeok1:!st.ct&&st.p1, ppeok2:!st.ct&&st.p2, ppeok3:!st.ct&&st.p3, restNames:rn, deadNames:dn}));
+  L.applyRound(g, r, L.roundNote(g, r, {score:st.score, go:st.go, giveup:!st.ct&&st.giveup, restNames:rn, deadNames:dn}));
   st={}; view='main'; render();
 }
 
@@ -581,15 +627,16 @@ function renderSet(){
    '<p>총통 포기 진행 배수</p><select id="sgu" style="font-size:22px;padding:10px;width:100%;border-radius:10px"><option value="2" '+(g.giveupMult!==4?'selected':'')+'>2배 (폭탄)</option><option value="4" '+(g.giveupMult===4?'selected':'')+'>4배 (흔들기+폭탄)</option></select>'+
    '<label class="ck"><input type="checkbox" id="sg" '+(g.gwangpal!==false?'checked':'')+'>4명 이상이면 광팔이 고르기 (3명만 침)</label>'+
    '<p>광값 개당 금액 (원)</p><input type="number" id="sgp" value="'+L.gwangPriceOf(g)+'">'+
-   '<p>첫뻑 추가 점수 (점)</p><input type="number" id="spk" value="'+L.ppeokScoreOf(g)+'">'+
-   '<p>2연뻑·3연뻑 배수</p><input type="number" id="spm" value="'+L.ppeokMultOf(g)+'">'+
+   '<p>첫뻑 점수 (점)</p><input type="number" id="spk" value="'+L.ppeokScoreOf(g)+'">'+
+   '<p>연뻑 배수 (2연뻑 = 첫뻑 x배수, 3연뻑 = 2연뻑 x배수)</p><input type="number" id="spm" value="'+L.ppeokMultOf(g)+'">'+
+   '<p>뻑 값 낼 사람</p><select id="spp" style="font-size:20px;padding:10px;width:100%;border-radius:10px"><option value="seated" '+(L.ppeokPayerMode(g)==='seated'?'selected':'')+'>이번 판에 앉은 전원 (광팔이·죽은 사람 포함)</option><option value="play" '+(L.ppeokPayerMode(g)==='play'?'selected':'')+'>이번 판에 친 사람만</option></select>'+
    '<p>광값 낼 사람 (죽은 사람은 항상 제외)</p><select id="sgw" style="font-size:20px;padding:10px;width:100%;border-radius:10px"><option value="noSeon" '+(L.gwangMode(g)==='noSeon'?'selected':'')+'>선 제외, 두 번째·세 번째 주자만</option><option value="all" '+(L.gwangMode(g)==='all'?'selected':'')+'>선 포함 치는 사람 모두</option></select>'+
    '<button class="b2" onclick="saveSet()">저장</button>'+
    '<button class="b1" onclick="resetAll()">전체 초기화 (새 게임)</button>'+
    '<button class="b3" onclick="view=\'main\';render()">돌아가기</button></div>';
   app.innerHTML=h;
 }
-function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value; if(!(pks>0)||!(pkm>0)) return alert('뻑 점수·배수를 확인해 주세요'); snap(); g.ppeokScore=pks; g.ppeokMult=pkm; g.gwangPrice=gp; g.gwangPayer=$('sgw').value==='all'?'all':'noSeon'; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
+function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value; if(!(pks>0)||!(pkm>0)) return alert('뻑 점수·배수를 확인해 주세요'); snap(); g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokPayer=$('spp').value==='play'?'play':'seated'; g.gwangPrice=gp; g.gwangPayer=$('sgw').value==='all'?'all':'noSeon'; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
 function resetAll(){ if(!confirm('모든 기록을 지우고 새로 시작할까요?')) return; if(!confirm('정말 지울까요? 되돌릴 수 없어요')) return; g=null; prev=null; localStorage.removeItem(KEY); view='main'; render(); }
 
 function renderEnd(){
