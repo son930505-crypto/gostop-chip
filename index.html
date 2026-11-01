@@ -23,7 +23,9 @@ main{padding:12px;max-width:720px;margin:0 auto}
 button{font-size:22px;font-weight:700;border:0;border-radius:14px;padding:16px;width:100%;margin-top:10px;cursor:pointer}
 .b1{background:#e63946;color:#fff}.b2{background:#2a9d8f;color:#fff}.b3{background:#eee;color:#222}.b4{background:#457b9d;color:#fff}
 .small{font-size:17px;padding:10px;margin-top:6px}
-.finerow{display:flex;gap:5px;margin-top:6px}.finerow button{margin:0;padding:9px 2px;font-size:17px;flex:1;background:#7a2e2e;color:#fff}
+.finerow{display:flex;gap:4px;margin-top:6px;align-items:center}.finerow .flab{font-size:15px;font-weight:700;color:#7a2e2e;white-space:nowrap}.finerow button{margin:0;padding:6px 0;font-size:20px;width:34px;flex:none;background:#7a2e2e;color:#fff;border-radius:10px}.finerow .fn{min-width:22px;font-size:20px;font-weight:700;text-align:center}
+.gpcard{display:flex;align-items:center;justify-content:center;gap:4px;font-size:15px;font-weight:700;margin-top:6px;color:#333}.gpcard input{width:20px;height:20px}
+.card.gpon{outline:3px solid #f5c542}
 .fcnt{font-size:15px;color:#7a2e2e;margin-top:6px}
 .chgrow3{display:flex;gap:5px;margin-top:8px}.chgrow3 button{margin:0;padding:10px 2px;font-size:16px;white-space:nowrap;flex:1}
 .row{display:flex;gap:8px}.row>*{flex:1}
@@ -95,11 +97,20 @@ var L = (function(){
   // 선·광팔이만 고르는 방식: 광팔이가 있으면 나머지는 모두 진행(죽은 사람 없음). 광팔이 없음이면 고른 죽은 사람만 빠짐
   // 4명 이상이고 광팔이 규칙이 켜져 있으면 기본 광팔이 = 마지막 주자 (두 번째·세 번째가 모두 진행한 경우)
   // gpOn: 광팔이 체크 → 마지막 주자가 광팔이로 쉬고 나머지(2·3번째 포함)는 모두 진행. 체크 안 하면 dead(2·3번째 중 죽은 사람)만 빠짐
-  function simpleSeat(g, seon, gpOn, dead){
-    var order = seatOrder(g, seon), rest = {}, dd = {};
-    if (gpOn && g.gwangpal!==false && order.length>=4) rest[order[order.length-1]] = true;
-    else Object.keys(dead||{}).forEach(function(i){ i=+i; var k = order.indexOf(i); if (dead[i] && (k===1 || k===2)) dd[i] = true; });
-    return {order: order, seon: order[0], rest: rest, dead: dd};
+  // gpPick: 카드에서 체크한 광팔이 번호(있으면 마지막 주자 자동 판정 대신 그 사람이 쉼, 나머지 모두 진행).
+  // 선이면 쉴 수 없어 적용 안 함(conflict 'seon'), 마지막 주자가 아니면 그대로 적용하고 안내(conflict 'notLast')
+  function simpleSeat(g, seon, gpOn, dead, gpPick){
+    var order = seatOrder(g, seon), rest = {}, dd = {}, conflict = null, picked = false;
+    var canGp = g.gwangpal!==false && order.length>=4;
+    if (gpPick!==undefined && gpPick!==null && canGp && order.indexOf(gpPick)>=0){
+      if (gpPick===order[0]) conflict = 'seon';
+      else { rest[gpPick] = true; picked = true; if (gpPick!==order[order.length-1]) conflict = 'notLast'; }
+    }
+    if (!picked && conflict!=='seon'){
+      if (gpOn && canGp) rest[order[order.length-1]] = true;
+      else Object.keys(dead||{}).forEach(function(i){ i=+i; var k = order.indexOf(i); if (dead[i] && (k===1 || k===2)) dd[i] = true; });
+    }
+    return {order: order, seon: order[0], rest: rest, dead: dd, conflict: conflict, picked: picked};
   }
   function gwangPriceOf(g){ return g.gwangPrice>0 ? g.gwangPrice : 5000; }
   // 광값 낼 사람: 'noSeon'(기본) = 선 제외, 두 번째·세 번째 주자만 / 'all' = 선 포함 치는 사람 모두. 죽은 사람은 항상 제외
@@ -233,11 +244,12 @@ var L = (function(){
     g.players[res.winner].bal += res.total;
     (res.gwang||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
     (res.ppeok||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
+    delete g.gpPick;
     g.round++; g.nextMult = 1;
     g.log.unshift({t:'판', r:g.round, txt: note || (g.players[res.winner].name+' 승, '+won(res.total)+' 받음')});
   }
   function voidRound(g, doubleNext){
-    g.round++;
+    delete g.gpPick; g.round++;
     if (doubleNext) g.nextMult = (g.nextMult||1)*2;
     g.log.unshift({t:'무효', r:g.round, txt:'무효(나가리·쇼당)'+(doubleNext?', 다음 판 x'+g.nextMult:'')});
   }
@@ -266,19 +278,21 @@ var L = (function(){
     return true;
   }
   // ===== 벌금: 욕·영어 1회당, 누른 사람이 나머지(잔액 있는 사람 전원) 각자에게 벌금 금액씩. 판 정산과 별개로 즉시 처리 =====
-  var FINE_KINDS = {swear:'욕', eng:'영어'};
+  // 예전 저장분의 욕(swear)·영어(eng) 기록도 그대로 읽고, 모두 '벌금'으로 표시·합산
+  var FINE_KINDS = {fine:'벌금', swear:'벌금', eng:'벌금'};
+  function fineKind(k){ return (k==='swear'||k==='eng') ? k : 'fine'; }
   function fineAmtOf(g){ return num(g.fineAmt)>0 ? num(g.fineAmt) : 1000; }
   // 미리 계산 (반영 안 함). 잔액 한도: 뻑 정산과 같은 방식으로 받는 사람 순서대로 남은 잔액 안에서만 냄
   function finePreview(g, i, kind){
     var each = fineAmtOf(g), bal = g.players[i].bal, to = [];
     g.players.forEach(function(p,j){ if (j===i || p.bal<=0) return; var pay = Math.min(each, Math.max(0, bal)); bal -= pay; to.push({i:j, pay:pay, capped: pay<each}); });
     var total = to.reduce(function(s,x){ return s+x.pay; }, 0);
-    return {i:i, kind:kind==='eng'?'eng':'swear', each:each, to:to, total:total, capped: to.some(function(x){ return x.capped; }), full: each*to.length};
+    return {i:i, kind:fineKind(kind), each:each, to:to, total:total, capped: to.some(function(x){ return x.capped; }), full: each*to.length};
   }
   function fineText(g, f){
     var p = g.players[f.i], nm = function(j){ return g.players[j] ? g.players[j].name : '?'; };
     var cap = f.to.filter(function(x){ return x.pay < f.each; });
-    return (p?p.name:'?')+' '+FINE_KINDS[f.kind]+' 벌금 -'+won(f.total)+' ('+f.to.map(function(x){ return nm(x.i); }).join('·')+' +각 '+won(f.each)+(cap.length?', 잔액 부족: '+cap.map(function(x){ return nm(x.i)+' '+won(x.pay)+'만'; }).join(', '):'')+')';
+    return (p?p.name:'?')+' 벌금 -'+won(f.total)+' ('+f.to.map(function(x){ return nm(x.i); }).join('·')+' +각 '+won(f.each)+(cap.length?', 잔액 부족: '+cap.map(function(x){ return nm(x.i)+' '+won(x.pay)+'만'; }).join(', '):'')+')';
   }
   function fine(g, i, kind, now){
     var f = finePreview(g, i, kind); if (!f.to.length || g.players[i].bal<=0) return null;
@@ -299,13 +313,15 @@ var L = (function(){
     if (!canUndoFine(g, id)) return false;
     var k = g.fines.map(function(x){ return x.id; }).indexOf(id), f = g.fines[k];
     f.to.forEach(function(x){ g.players[x.i].bal -= x.pay; }); g.players[f.i].bal += f.total; g.fines.splice(k, 1);
-    g.log.unshift({t:'벌금 취소', r:g.round, txt:g.players[f.i].name+' '+FINE_KINDS[f.kind]+' 벌금 취소 (+'+won(f.total)+' 되돌림)'});
+    g.log.unshift({t:'벌금 취소', r:g.round, txt:g.players[f.i].name+' 벌금 취소 (+'+won(f.total)+' 되돌림)'});
     return true;
   }
   function lastFine(g){ var f = g.fines||[]; return f.length ? f[f.length-1] : null; }
+  // 그 사람의 가장 최근 벌금 (- 버튼으로 취소할 대상)
+  function lastFineOf(g, i){ var f = (g.fines||[]).filter(function(x){ return x.i===i; }); return f.length ? f[f.length-1] : null; }
   function fineCounts(g){
-    return g.players.map(function(p,i){ var c = {swear:0, eng:0, paid:0, got:0};
-      (g.fines||[]).forEach(function(f){ if (f.i===i){ c[f.kind]++; c.paid += f.total; } f.to.forEach(function(x){ if (x.i===i) c.got += x.pay; }); });
+    return g.players.map(function(p,i){ var c = {n:0, swear:0, eng:0, fine:0, paid:0, got:0};
+      (g.fines||[]).forEach(function(f){ if (f.i===i){ c.n++; c[fineKind(f.kind)]++; c.paid += f.total; } f.to.forEach(function(x){ if (x.i===i) c.got += x.pay; }); });
       return c; });
   }
   function lastCharge(g){ var c = g.chg||[]; return c.length ? c[c.length-1] : null; }
@@ -357,7 +373,7 @@ var L = (function(){
     return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokPayer:s.ppeokPayer==='play'?'play':'seated', fineAmt:num(s.fineAmt)>0?num(s.fineAmt):1000,
       players: s.players.map(function(p){ return {name:String(p&&p.name||''), bal:num(p&&p.bal), charges:num(p&&p.charges), invested:num(p&&p.invested)}; }),
       chg: (Array.isArray(s.chg)?s.chg:[]).map(function(c){ return {id:num(c&&c.id), t:num(c&&c.t), i:Math.floor(num(c&&c.i)), amt:num(c&&c.amt), after:num(c&&c.after)}; }).filter(function(c){ return c.i>=0 && c.i<s.players.length; }),
-      fines: (Array.isArray(s.fines)?s.fines:[]).map(function(f){ return {id:num(f&&f.id), t:num(f&&f.t), i:Math.floor(num(f&&f.i)), kind:(f&&f.kind)==='eng'?'eng':'swear', each:num(f&&f.each), total:num(f&&f.total), after:num(f&&f.after),
+      fines: (Array.isArray(s.fines)?s.fines:[]).map(function(f){ return {id:num(f&&f.id), t:num(f&&f.t), i:Math.floor(num(f&&f.i)), kind:fineKind(f&&f.kind), each:num(f&&f.each), total:num(f&&f.total), after:num(f&&f.after),
         to:(Array.isArray(f&&f.to)?f.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; })}; }).filter(function(f){ return f.i>=0 && f.i<s.players.length; }),
       log: (Array.isArray(s.log)?s.log:[]).map(function(l){ return {t:String(l&&l.t||''), r:num(l&&l.r), txt:String(l&&l.txt||'')}; }) } };
   }
@@ -374,7 +390,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -408,7 +424,8 @@ function RULES(){
  '<p><b>죽음(포기)</b>: 죽은 사람은 그 판 점수 정산에서 빠져요(내지도 받지도 않음). 광값도 어떤 설정에서든 내지 않아요.</p>'+
  '<p><b>광값</b>: 광팔이가 받은 패에서 광이나 쌍피 개수를 세요. 개수 x 개당 금액(지금 '+W(gp)+')을 광값 낼 사람 각각이 광팔이에게 줘요. 판에서 이기고 지는 것과 상관없어요. 지금 설정: <b>'+esc(who)+'</b> (설정에서 "선 포함 치는 사람 모두"로 바꿀 수 있어요). 예: 2개면 두 번째·세 번째 주자가 한 명당 '+W(gp*2)+'씩. 0개면 광값 없음.</p>'+
  '<p><b>충전</b>: 기본은 모두 0원으로 시작해요. 각자 카드의 +1만원, +5만원, +10만원 버튼 중 하나를 누르면 그 금액이 바로 들어가고 충전 내역에 금액별로 남아요. 잘못 눌렀으면 "방금 충전 취소"나 충전 내역의 취소 버튼으로 되돌려요(판에서 이미 쓴 칩은 취소 불가). 충전한 돈은 모두 딜러 계좌(장부)에 모여요.</p>'+
- '<p><b>벌금 (욕·영어)</b>: 카드의 "욕"이나 "영어"를 누르면 바로 반영돼요. 누른 사람이 잔액 있는 나머지 사람 각자에게 '+W(L.fineAmtOf(g||{}))+'씩 줘요 (4명 모두 잔액 있으면 -'+W(L.fineAmtOf(g||{})*3)+', 나머지는 각 +'+W(L.fineAmtOf(g||{}))+'). 판 정산과 따로예요. 잔액이 모자라면 경고를 띄우고 가진 만큼만 내요(뻑과 같은 방식). 벌금 내역에서 건별 취소, 방금 낸 건 "방금 벌금 취소". 금액은 설정에서 바꿔요.</p>'+
+ '<p><b>벌금</b>: 카드의 벌금 +를 누르면 바로 반영되고, -를 누르면 그 사람의 가장 최근 벌금 1건이 취소돼요. 누른 사람이 잔액 있는 나머지 사람 각자에게 '+W(L.fineAmtOf(g||{}))+'씩 줘요 (4명 모두 잔액 있으면 -'+W(L.fineAmtOf(g||{})*3)+', 나머지는 각 +'+W(L.fineAmtOf(g||{}))+'). 판 정산과 따로예요. 잔액이 모자라면 경고를 띄우고 가진 만큼만 내요(뻑과 같은 방식). 벌금 내역에서 건별 취소, 방금 낸 건 "방금 벌금 취소". 금액은 설정에서 바꿔요. 예전에 욕·영어로 기록된 건도 벌금 횟수에 합쳐 보여요.</p>'+
+ '<p><b>카드의 광팔이 체크</b>: 판 중에 바로 체크해 두면 판 끝 화면에 그대로 반영돼서 그 사람이 광팔이로 쉬고 광값을 넣을 수 있어요. 한 번에 한 명이고, 다시 누르면 풀려요. 판을 반영하거나 무효로 하면 자동으로 풀려요. 체크하지 않으면 마지막 주자 자동 판정 그대로예요.</p>'+
  '<p><b>잔액 한도</b>: 자기 잔액보다 많이 낼 수 없어요. 광값은 점수 정산을 하고 남은 잔액 안에서 내요. 잔액이 0원인 사람은 쉬는 중이라 판에 참여할 수 없고, 본인이 충전을 누르면 바로 다시 참여해요.</p>'+
  '<p><b>점수</b>: 고 보너스 빼고 난 점수를 넣어 주세요 (3명이 칠 때 3점부터 남).</p>'+
  SHAREHELP+'</details>';
@@ -460,25 +477,33 @@ function renderMain(){
   var h=flash+'<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+'</div></div><div class="grid">';
   g.players.forEach(function(p,i){
     var out=p.bal<=0;
-    h+='<div class="card '+(out?'out':'')+'"><div class="nm">'+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
+    h+='<div class="card '+(out?'out':'')+(g.gpPick===i&&!out?' gpon':'')+'"><div class="nm">'+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
       '<div class="sub">넣은 돈 '+W(p.invested)+' ('+p.charges+'회)</div>'+
       (out?'<div class="tag">쉬는 중 (충전하면 참여)</div>':'')+
       '<div class="chgrow3">'+L.CHARGE_AMTS.map(function(a){ return '<button class="b2 chg" data-amt="'+a+'" onclick="doCharge('+i+','+a+')">+'+(a/10000)+'만원</button>'; }).join('')+'</div>'+
-      '<div class="finerow"><button class="fine" data-k="swear" onclick="doFine('+i+',\'swear\')">욕</button><button class="fine" data-k="eng" onclick="doFine('+i+',\'eng\')">영어</button></div>'+fineCnt(fc[i])+'</div>';
+      '<div class="finerow"><span class="flab">벌금</span><button class="fine fminus" onclick="fineMinus('+i+')">-</button><span class="fn">'+fc[i].n+'</span><button class="fine fplus" onclick="doFine('+i+')">+</button></div>'+
+      (out?'':'<label class="gpcard"><input type="checkbox" class="gpcardck" '+(g.gpPick===i?'checked':'')+' onchange="toggleGpCard('+i+')">광팔이</label>')+fineCnt(fc[i])+'</div>';
   });
   h+='</div>'+orderNote()+'<button class="b1 big" onclick="toS1()">판 끝! 점수 넣기</button>'+
    '<div class="row"><button class="b3 small" onclick="doVoid()">무효 (나가리·쇼당)</button><button class="b3 small" onclick="undo()">방금 것 되돌리기</button></div>'+
-   '<button class="b3 small" onclick="view=\'fine\';render()">벌금 내역 (욕·영어)</button>'+
+   '<button class="b3 small" onclick="view=\'fine\';render()">벌금 내역</button>'+
    '<div class="row"><button class="b3 small" onclick="view=\'chg\';render()">충전 내역</button><button class="b3 small" onclick="view=\'log\';render()">기록 보기</button><button class="b3 small" onclick="view=\'set\';render()">설정</button></div>'+
    '<button class="b2" onclick="view=\'share\';render()">보기용 링크 만들기 (참가자 공유)</button>'+
    '<button class="b4" onclick="view=\'end\';render()">끝내고 정산하기</button>'+RULES();
   app.innerHTML=h;
 }
-function fineCnt(c){ return '<div class="fcnt">욕 '+c.swear+'회 · 영어 '+c.eng+'회'+(c.paid||c.got?'<br>낸 벌금 '+(c.paid?'-':'')+W(c.paid)+' / 받은 벌금 '+(c.got?'+':'')+W(c.got):'')+'</div>'; }
+function fineCnt(c){ return '<div class="fcnt">벌금 '+c.n+'회'+(c.paid||c.got?'<br>낸 벌금 '+(c.paid?'-':'')+W(c.paid)+' / 받은 벌금 '+(c.got?'+':'')+W(c.got):'')+'</div>'; }
 // 벌금: 누르면 바로 반영. 누른 사람이 잔액 있는 나머지 전원에게 벌금 금액씩. 잔액 한도는 뻑 정산과 같은 방식
+// 카드의 광팔이 체크: 한 번에 한 명, 다시 누르면 해제. 판 끝 화면의 선·광팔이 설정과 같은 상태(g.gpPick)
+function toggleGpCard(i){ if (g.gpPick===i) delete g.gpPick; else g.gpPick=i; st={}; render(); }
+// 벌금 -: 그 사람의 가장 최근 벌금 1건 취소
+function fineMinus(i){
+  var f=L.lastFineOf(g,i); if(!f) return alert(g.players[i].name+' 님은 취소할 벌금이 없어요');
+  cancelFine(f.id);
+}
 function doFine(i,kind){
-  var p=g.players[i], nm=L.FINE_KINDS[kind];
-  if (p.bal<=0) return alert(p.name+' 님은 잔액이 0원이라 '+nm+' 벌금을 낼 수 없어요. 먼저 충전해 주세요');
+  kind='fine'; var p=g.players[i], nm='';
+  if (p.bal<=0) return alert(p.name+' 님은 잔액이 0원이라 벌금을 낼 수 없어요. 먼저 충전해 주세요');
   var pv=L.finePreview(g,i,kind);
   if (!pv.to.length) return alert('벌금을 받을 사람(잔액 있는 다른 사람)이 없어요');
   snap(); var rec=L.fine(g,i,kind);
@@ -491,8 +516,8 @@ function cancelFine(id){
   snap(); L.undoFine(g,id); if(view==='main') st={}; render();
 }
 function fineHtml(ro){
-  var fc=L.fineCounts(g), h='<div class="box"><h2>벌금 내역 (욕·영어, 1회 '+W(L.fineAmtOf(g))+'씩)</h2>';
-  g.players.forEach(function(p,i){ var c=fc[i]; h+='<div class="calc"><b>'+esc(p.name)+'</b> 욕 '+c.swear+'회 · 영어 '+c.eng+'회<br><span style="font-size:16px">낸 벌금 '+W(c.paid)+' · 받은 벌금 '+W(c.got)+'</span></div>'; });
+  var fc=L.fineCounts(g), h='<div class="box"><h2>벌금 내역 (1회 '+W(L.fineAmtOf(g))+'씩)</h2>';
+  g.players.forEach(function(p,i){ var c=fc[i]; h+='<div class="calc"><b>'+esc(p.name)+'</b> 벌금 '+c.n+'회<br><span style="font-size:16px">낸 벌금 '+W(c.paid)+' · 받은 벌금 '+W(c.got)+'</span></div>'; });
   h+='<h2 style="font-size:21px;margin-top:14px">시간순 내역</h2>';
   if (!(g.fines||[]).length) h+='<p>아직 벌금 내역이 없어요</p>';
   (g.fines||[]).forEach(function(f,k){
@@ -551,13 +576,13 @@ function initS1(){
   if (st.init) return; st.init=true; st.gw={}; st.dd={};
   var act=actList(), s0=(g.order||[])[0];
   st.seon = act.indexOf(s0)>=0 ? s0 : act[0];
-  st.gpOn = useGp();
+  st.gpOn = useGp() || g.gpPick!==undefined;
   seatApply();
 }
-function seatApply(){ var a=L.simpleSeat(g, st.seon, st.gpOn, st.dd); st.order=a.order; st.rest=a.rest; st.dead=a.dead; fixW(); }
+function seatApply(){ var a=L.simpleSeat(g, st.seon, st.gpOn, st.dd, g.gpPick); st.order=a.order; st.rest=a.rest; st.dead=a.dead; st.conflict=a.conflict; st.picked=a.picked; fixW(); }
 function fixW(){ if (st.w!==undefined && (st.rest[st.w]||st.dead[st.w])) st.w=undefined; }
 function pickSeon(i){ st.seon=i; st.dd={}; seatApply(); render(); }
-function setGp(on){ st.gpOn=!!on; st.dd={}; seatApply(); render(); }
+function setGp(on){ st.gpOn=!!on; if(!on) delete g.gpPick; st.dd={}; seatApply(); render(); }
 function toggleDead(i){ st.dd[i]=!st.dd[i]; if(!st.dd[i]) delete st.dd[i]; seatApply(); render(); }
 function playing(){ return L.roundPlayers(g, st.rest, st.dead).play; }
 function renderS1(){
@@ -568,8 +593,11 @@ function renderS1(){
   actList().forEach(function(i){ h+='<button class="pick small seonbtn '+(st.seon===i?'on':'')+'" onclick="pickSeon('+i+')">'+nm(i)+'</button>'; });
   h+='</div><p style="font-size:16px;color:#555">순서: '+o.map(nm).join(' → ')+'</p>';
   if (useGp()){
-    h+='<p><b>2. 광팔이</b></p><label class="ck"><input type="checkbox" id="gpck" '+(gpOn?'checked':'')+' onchange="setGp(this.checked)">광팔이 있음 ('+nm(last)+' 쉼)</label>';
-  }
+    var gpWho = st.picked ? Object.keys(st.rest).map(Number)[0] : last;
+    h+='<p><b>2. 광팔이</b></p><label class="ck"><input type="checkbox" id="gpck" '+(gpOn||st.conflict==='seon'?'checked':'')+' onchange="setGp(this.checked)">광팔이 있음 ('+nm(gpWho)+' 쉼'+(st.picked?', 카드에서 체크':'')+')</label>';
+    if (st.conflict==='notLast') h+='<p class="note gpnote">카드에서 광팔이로 체크한 '+nm(gpWho)+' 님은 이 순서의 마지막 주자('+nm(last)+')가 아니에요. 체크한 대로 '+nm(gpWho)+' 님이 쉬고 나머지는 모두 쳐요. 맞지 않으면 선을 바꾸거나 체크를 풀어 주세요.</p>';
+    if (st.conflict==='seon') h+='<p class="warn gpnote">카드에서 광팔이로 체크한 '+nm(g.gpPick)+' 님이 선이에요. 선은 광팔이가 될 수 없어요. 선을 바꾸거나 광팔이 체크를 풀어 주세요.</p>';
+  } else if (g.gpPick!==undefined && g.players[g.gpPick]) h+='<p class="note gpnote">카드에서 '+nm(g.gpPick)+' 님을 광팔이로 체크했지만, 광팔이는 잔액 있는 사람이 4명 이상이고 광팔이 규칙이 켜져 있을 때만 적용돼요. 이번 판은 광팔이 없이 진행해요.</p>';
   if (!gpOn){
     var cand=o.slice(1,3);
     if (cand.length){
@@ -592,6 +620,7 @@ function renderS1(){
 }
 function checkS1(){
   var rp=L.roundPlayers(g, st.rest, st.dead);
+  if (st.conflict==='seon'){ alert('선은 광팔이가 될 수 없어요. 선을 바꾸거나 광팔이 체크를 풀어 주세요'); return null; }
   if (!rp.ok){ alert(rp.play.length>3 ? '치는 사람은 3명까지예요. 광팔이나 안 치는 사람을 골라 주세요' : '치는 사람이 2명 이상이어야 해요'); return null; }
   if (st.w===undefined || rp.play.indexOf(st.w)<0){ alert('이긴 사람을 골라 주세요'); return null; }
   var losers=rp.play.filter(function(i){return i!==st.w;});
@@ -712,7 +741,7 @@ function renderSet(){
    '<p>광값 개당 금액 (원)</p><input type="number" id="sgp" value="'+L.gwangPriceOf(g)+'">'+
    '<p>첫뻑 점수 (점)</p><input type="number" id="spk" value="'+L.ppeokScoreOf(g)+'">'+
    '<p>연뻑 배수 (2연뻑 = 첫뻑 x배수, 3연뻑 = 2연뻑 x배수)</p><input type="number" id="spm" value="'+L.ppeokMultOf(g)+'">'+
-   '<p>벌금 1회 금액 (욕·영어, 받는 사람 1명당 원)</p><input type="number" id="sfa" value="'+L.fineAmtOf(g)+'">'+
+   '<p>벌금 1회 금액 (받는 사람 1명당 원)</p><input type="number" id="sfa" value="'+L.fineAmtOf(g)+'">'+
    '<p>뻑 값 낼 사람</p><select id="spp" style="font-size:20px;padding:10px;width:100%;border-radius:10px"><option value="seated" '+(L.ppeokPayerMode(g)==='seated'?'selected':'')+'>이번 판에 앉은 전원 (광팔이·죽은 사람 포함)</option><option value="play" '+(L.ppeokPayerMode(g)==='play'?'selected':'')+'>이번 판에 친 사람만</option></select>'+
    '<p>광값 낼 사람 (죽은 사람은 항상 제외)</p><select id="sgw" style="font-size:20px;padding:10px;width:100%;border-radius:10px"><option value="noSeon" '+(L.gwangMode(g)==='noSeon'?'selected':'')+'>선 제외, 두 번째·세 번째 주자만</option><option value="all" '+(L.gwangMode(g)==='all'?'selected':'')+'>선 포함 치는 사람 모두</option></select>'+
    '<button class="b2" onclick="saveSet()">저장</button>'+
