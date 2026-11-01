@@ -26,7 +26,7 @@ button{font-size:22px;font-weight:700;border:0;border-radius:14px;padding:16px;w
 .finerow{display:flex;gap:3px;margin-top:6px;align-items:center;justify-content:center}.finerow .flab{font-size:15px;font-weight:700;color:#7a2e2e;white-space:nowrap}.finerow button{margin:0;padding:6px 0;font-size:19px;width:30px;flex:none;background:#7a2e2e;color:#fff;border-radius:10px}.finerow .fn{min-width:22px;font-size:20px;font-weight:700;text-align:center}
 .gpcard{display:flex;align-items:center;justify-content:center;gap:4px;font-size:15px;font-weight:700;margin-top:6px;color:#333}.gpcard input{width:20px;height:20px}
 .finerow .pkl{min-width:44px;font-size:14px;font-weight:700;text-align:center;color:#1d3f8a}.finerow button.pkb{background:#1d3f8a}
-.finerow button.gwb{background:#b07800}.gpcard label{display:flex;align-items:center;gap:3px}.gpcard{gap:10px}
+.finerow button.gwb{background:#b07800}.finerow button.foolb{background:#6a1b9a}.gpcard label{display:flex;align-items:center;gap:3px}.gpcard{gap:10px}
 .card.deadon{opacity:.75}
 .winb{display:inline-block;background:#f5c542;color:#5a3d00;border-radius:8px;padding:1px 6px;font-size:14px;vertical-align:middle}
 .card.gpon{outline:3px solid #f5c542}
@@ -340,6 +340,36 @@ var L = (function(){
       (g.fines||[]).forEach(function(f){ if (f.i===i){ c.n++; c[fineKind(f.kind)]++; c.paid += f.total; } f.to.forEach(function(x){ if (x.i===i) c.got += x.pay; }); });
       return c; });
   }
+  // ===== 멍청이: 카드 + 한 번마다 누른 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 멍청이 금액(기본 5,000원)을 즉시 줌 =====
+  // 멍청이 잔액이 모자라면 벌금과 같은 방식: 사람 순서대로 남은 잔액만큼만. - 는 그 사람의 가장 최근 1건을 정확히 되돌림(받은 사람이 이미 썼으면 막힘). 판 반영 때 다시 계산 안 함
+  function foolAmtOf(g){ return num(g.foolAmt)>0 ? num(g.foolAmt) : 5000; }
+  function foolCount(g, i){ return (g.fools||[]).filter(function(x){ return x.i===i; }).length; }
+  function foolText(g, r){
+    var nm = function(j){ return g.players[j] ? g.players[j].name : '?'; }, cap = r.to.filter(function(x){ return x.pay < r.each; });
+    return nm(r.i)+' 멍청이 -'+won(r.total)+' ('+(r.to.length?r.to.map(function(x){ return nm(x.i); }).join('·')+' 각 +'+won(r.each):'받을 사람 없음')+(cap.length?', 잔액 부족: '+cap.map(function(x){ return nm(x.i)+' '+won(x.pay)+'만'; }).join(', '):'')+')';
+  }
+  function foolStep(g, i, d, now){
+    var p = g.players[i]; if (!p) return {ok:false};
+    if (d>0){
+      if (p.bal<=0) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 멍청이 돈을 낼 수 없어요. 먼저 충전해 주세요'};
+      var each = foolAmtOf(g), left = p.bal, to = [];
+      g.players.forEach(function(x,j){ if (j===i || x.bal<=0) return; var pay = Math.min(each, Math.max(0, left)); left -= pay; to.push({i:j, pay:pay}); });
+      if (!to.length) return {ok:false, msg:'받을 사람(잔액 있는 다른 사람)이 없어요'};
+      to.forEach(function(x){ g.players[x.i].bal += x.pay; p.bal -= x.pay; });
+      if (!g.fools) g.fools = [];
+      g.foolSeq = Math.max(g.foolSeq||0, g.fools.reduce(function(m,x){ return Math.max(m, x.id); }, 0)) + 1;
+      var rec = {id:g.foolSeq, t: now || Date.now(), r: g.round+1, i:i, each:each, to:to, total: to.reduce(function(s,x){ return s+x.pay; }, 0)};
+      g.fools.push(rec); g.log.unshift({t:'멍청이', r:g.round+1, txt:foolText(g, rec)});
+      return {ok:true, rec:rec, capped: to.some(function(x){ return x.pay < each; })};
+    }
+    var mine = (g.fools||[]).filter(function(x){ return x.i===i; }), last = mine[mine.length-1];
+    if (!last) return {ok:false, msg:p.name+' 님은 되돌릴 멍청이가 없어요'};
+    var short = last.to.filter(function(x){ return !g.players[x.i] || g.players[x.i].bal < x.pay; });
+    if (short.length) return {ok:false, msg:short.map(function(x){ return g.players[x.i].name; }).join('·')+' 님이 멍청이로 받은 돈을 이미 써서 되돌릴 수 없어요'};
+    last.to.forEach(function(x){ g.players[x.i].bal -= x.pay; }); p.bal += last.total; g.fools.splice(g.fools.indexOf(last), 1);
+    g.log.unshift({t:'멍청이', r:g.round+1, txt:p.name+' 멍청이 취소 (+'+won(last.total)+' 돌려받음: '+last.to.map(function(x){ return g.players[x.i].name+' '+won(x.pay); }).join(', ')+')'});
+    return {ok:true, undone:last};
+  }
   // ===== 카드 뻑 즉시 정산: + 누르는 즉시 뻑 먹은 사람이 나머지 각자에게서 (뻑 점수 x 그 시점 점당 금액)을 받음 =====
   // g.pks: 정산된 뻑 기록, g.pkPick[i]: 카드 단계, g.pkRec[i]: 지금 단계의 정산 기록 id (판 반영 후 둘 다 풀리고 돈은 그대로)
   function pkPayers(g, i){ var dp = g.deadPick||{}; return g.players.map(function(p,j){return j;}).filter(function(j){ return j!==i && g.players[j].bal>0 && !dp[j] && !(ppeokPayerMode(g)==='play' && g.gpPick===j); }); }
@@ -395,6 +425,29 @@ var L = (function(){
       g.players[j].bal -= pay2; g.players[rec.i].bal += pay2; rec.to.push({i:j, pay:pay2}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay2;
       rec.dead.splice(rec.dead.indexOf(j), 1);
       txt = '뻑 수정: '+nm(rec.i)+' '+PPEOK_NAMES[rec.level]+(rec.r?' ('+rec.r+'판)':'')+' - '+nm(j)+' 죽음 취소 → '+won(pay2)+' 다시 냄';
+    }
+    g.log.unshift({t:'뻑', r:g.round+1, txt:txt});
+    return {ok:true, txt:txt};
+  }
+  // 뻑 1건의 낸 사람 직접 수정: pays=false → 그 사람 몫 정확히 환불(빠진 사람으로 기록), pays=true → 같은 금액(잔액 한도)으로 정산. 기록 남김
+  function pkRecPayer(g, id, j, pays, now){
+    var rec = pkFind(g, id), nm = function(k){ return g.players[k] ? g.players[k].name : '?'; };
+    if (!rec || !g.players[j] || j===rec.i) return {ok:false};
+    if (!rec.dead) rec.dead = [];
+    var x = rec.to.filter(function(t){ return t.i===j; })[0], txt, tag = nm(rec.i)+' '+PPEOK_NAMES[rec.level]+(rec.r?' ('+rec.r+'판)':'');
+    if (!pays){
+      if (!x) return {ok:false};
+      if (g.players[rec.i].bal < x.pay) return {ok:false, msg: nm(rec.i)+' 님 잔액이 '+won(x.pay)+'보다 적어서 돌려줄 수 없어요'};
+      g.players[rec.i].bal -= x.pay; g.players[j].bal += x.pay; rec.to.splice(rec.to.indexOf(x), 1); rec.total -= x.pay;
+      if (rec.dead.indexOf(j)<0) rec.dead.push(j);
+      txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 빠짐 → '+won(x.pay)+' 돌려줌';
+    } else {
+      if (x) return {ok:false};
+      var pay = Math.min(rec.each, Math.max(0, g.players[j].bal));
+      if (!pay) return {ok:false, msg: nm(j)+' 님은 잔액이 0원이라 낼 수 없어요'};
+      g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay;
+      var k = rec.dead.indexOf(j); if (k>=0) rec.dead.splice(k, 1);
+      txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 추가 → '+won(pay)+' 냄';
     }
     g.log.unshift({t:'뻑', r:g.round+1, txt:txt});
     return {ok:true, txt:txt};
@@ -580,11 +633,12 @@ var L = (function(){
   function unb64u(str){ str=String(str).replace(/-/g,'+').replace(/_/g,'/'); while (str.length%4) str+='='; var s=atob(str), b=new Uint8Array(s.length); for (var i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
   function pipeBytes(bytes, ts){ return new Response(new Blob([bytes]).stream().pipeThrough(ts)).arrayBuffer().then(function(ab){ return new Uint8Array(ab); }); }
   function packState(g, now){
-    return { v:1, t: now || Date.now(), g: { limit:g.limit, ppp:g.ppp, nextMult:g.nextMult, round:g.round, gwangpal:g.gwangpal, ctScore:g.ctScore, giveupMult:g.giveupMult, gwangPrice:gwangPriceOf(g), gwangPayer:gwangMode(g), ppeokScore:ppeokScoreOf(g), ppeokMult:ppeokMultOf(g), ppeokPayer:ppeokPayerMode(g), fineAmt:fineAmtOf(g), lastWin:(g.lastWin>=0&&g.lastWin<g.players.length)?g.lastWin:-1,
+    return { v:1, t: now || Date.now(), g: { limit:g.limit, ppp:g.ppp, nextMult:g.nextMult, round:g.round, gwangpal:g.gwangpal, ctScore:g.ctScore, giveupMult:g.giveupMult, gwangPrice:gwangPriceOf(g), gwangPayer:gwangMode(g), ppeokScore:ppeokScoreOf(g), ppeokMult:ppeokMultOf(g), ppeokPayer:ppeokPayerMode(g), fineAmt:fineAmtOf(g), foolAmt:foolAmtOf(g), lastWin:(g.lastWin>=0&&g.lastWin<g.players.length)?g.lastWin:-1,
       players: g.players.map(function(p){ return {name:p.name, bal:p.bal, charges:p.charges, invested:p.invested}; }),
       chg: (g.chg||[]).map(function(c){ return {id:c.id, t:c.t, i:c.i, amt:c.amt, after:c.after}; }),
       gws: (g.gws||[]).map(function(r){ return {id:r.id, t:r.t, r:r.r, i:r.i, n:r.n, each:r.each, to:r.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:r.total, dead:(r.dead||[]).slice(), seon:(r.seon===undefined?-1:r.seon)}; }),
       pks: (g.pks||[]).map(function(r){ return {id:r.id, t:r.t, r:r.r, i:r.i, level:r.level, points:r.points, ppp:r.ppp, each:r.each, to:r.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:r.total, dead:(r.dead||[]).slice(), src:r.src==='round'?'round':undefined}; }),
+      fools: (g.fools||[]).map(function(r){ return {id:r.id, t:r.t, r:r.r, i:r.i, each:r.each, to:r.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:r.total}; }),
       fines: (g.fines||[]).map(function(f){ return {id:f.id, t:f.t, i:f.i, kind:f.kind, each:f.each, to:f.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:f.total, after:f.after}; }),
       log: g.log.map(function(l){ return {t:l.t, r:l.r, txt:l.txt}; }) } };
   }
@@ -592,7 +646,7 @@ var L = (function(){
   function cleanState(d){
     if (!d || d.v!==1 || !d.g || !Array.isArray(d.g.players) || !d.g.players.length) throw new Error('잘못된 링크');
     var s=d.g;
-    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokPayer:s.ppeokPayer==='seated'?'seated':'play', fineAmt:num(s.fineAmt)>0?num(s.fineAmt):1000, lastWin:(typeof s.lastWin==='number'&&s.lastWin>=0&&s.lastWin<s.players.length)?Math.floor(s.lastWin):-1,
+    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokPayer:s.ppeokPayer==='seated'?'seated':'play', fineAmt:num(s.fineAmt)>0?num(s.fineAmt):1000, foolAmt:num(s.foolAmt)>0?num(s.foolAmt):5000, lastWin:(typeof s.lastWin==='number'&&s.lastWin>=0&&s.lastWin<s.players.length)?Math.floor(s.lastWin):-1,
       players: s.players.map(function(p){ return {name:String(p&&p.name||''), bal:num(p&&p.bal), charges:num(p&&p.charges), invested:num(p&&p.invested)}; }),
       chg: (Array.isArray(s.chg)?s.chg:[]).map(function(c){ return {id:num(c&&c.id), t:num(c&&c.t), i:Math.floor(num(c&&c.i)), amt:num(c&&c.amt), after:num(c&&c.after)}; }).filter(function(c){ return c.i>=0 && c.i<s.players.length; }),
       gws: (Array.isArray(s.gws)?s.gws:[]).map(function(r){ return {id:num(r&&r.id), t:num(r&&r.t), r:num(r&&r.r), i:Math.floor(num(r&&r.i)), n:Math.max(1,Math.floor(num(r&&r.n))), each:num(r&&r.each), total:num(r&&r.total),
@@ -601,6 +655,8 @@ var L = (function(){
       pks: (Array.isArray(s.pks)?s.pks:[]).map(function(r){ return {id:num(r&&r.id), t:num(r&&r.t), r:num(r&&r.r), i:Math.floor(num(r&&r.i)), level:Math.min(3,Math.max(1,Math.floor(num(r&&r.level))||1)), points:num(r&&r.points), ppp:num(r&&r.ppp), each:num(r&&r.each), total:num(r&&r.total),
         to:(Array.isArray(r&&r.to)?r.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; }),
         dead:(Array.isArray(r&&r.dead)?r.dead:[]).map(function(x){ return Math.floor(num(x)); }).filter(function(x){ return x>=0 && x<s.players.length; }), src:(r&&r.src==='round')?'round':undefined}; }).filter(function(r){ return r.i>=0 && r.i<s.players.length; }),
+      fools: (Array.isArray(s.fools)?s.fools:[]).map(function(r){ return {id:num(r&&r.id), t:num(r&&r.t), r:num(r&&r.r), i:Math.floor(num(r&&r.i)), each:num(r&&r.each), total:num(r&&r.total),
+        to:(Array.isArray(r&&r.to)?r.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; })}; }).filter(function(r){ return r.i>=0 && r.i<s.players.length; }),
       fines: (Array.isArray(s.fines)?s.fines:[]).map(function(f){ return {id:num(f&&f.id), t:num(f&&f.t), i:Math.floor(num(f&&f.i)), kind:fineKind(f&&f.kind), each:num(f&&f.each), total:num(f&&f.total), after:num(f&&f.after),
         to:(Array.isArray(f&&f.to)?f.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; })}; }).filter(function(f){ return f.i>=0 && f.i<s.players.length; }),
       log: (Array.isArray(s.log)?s.log:[]).map(function(l){ return {t:String(l&&l.t||''), r:num(l&&l.r), txt:String(l&&l.txt||'')}; }) } };
@@ -618,7 +674,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -652,6 +708,7 @@ function RULES(){
  '<p><b>죽음(포기)</b>: 죽은 사람은 그 판 점수 정산에서 빠지고(내지도 받지도 않음) 광값·뻑 값도 내지 않아요. 광팔이와 죽은 사람은 함께 있을 수 있어요(4명이면 광팔이 1명 + 죽음 1명 → 2명이 침). 카드나 판 끝 화면에서 "죽음"을 체크해요. 이미 정산된 광값이 있을 때 죽음 체크가 바뀌면 자동으로 다시 계산해요(죽은 사람 몫은 돌려주고 남은 사람끼리 다시, 기록에 "재정산"). 판 반영 때 정산된 뻑은 "뻑 내역"에서 죽은 사람을 고르면 그 사람 몫을 돌려줘요.</p>'+
  '<p><b>광값</b>: 카드의 광팔이 +를 누를 때마다(광이나 쌍피 1개) 그 사람이 광팔이로 체크되고, 광팔이 본인과 선을 뺀 나머지(2·3번째 주자) 각자에게서 '+W(gp)+'씩 바로 받아요. 예: 4명이면 2명에게서 각 '+W(gp)+', 광팔이는 +'+W(gp*2)+'. 죽은 사람은 내지 않아요. 선은 판 끝 화면에서 고른 선, 없으면 직전 판 승리자예요(카드에 "선" 표시). 선을 바꾸면 이미 받은 광값을 자동으로 다시 계산해요(기록에 "재정산"). -는 가장 최근 1개를 정확히 환불해요(받은 돈을 이미 썼으면 막혀요). 판 끝 화면의 광값 +/-도 같은 정산이고, 판 반영 때 다시 계산하지 않아요.</p>'+
  '<p><b>충전</b>: 기본은 모두 0원으로 시작해요. 각자 카드의 +1만원, +5만원, +10만원 버튼 중 하나를 누르면 그 금액이 바로 들어가고 충전 내역에 금액별로 남아요. 잘못 눌렀으면 "방금 충전 취소"나 충전 내역의 취소 버튼으로 되돌려요(판에서 이미 쓴 칩은 취소 불가). 충전한 돈은 모두 딜러 계좌(장부)에 모여요.</p>'+
+ '<p><b>멍청이</b>: 카드의 멍청이 +를 누를 때마다 그 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 '+W(L.foolAmtOf(g||{}))+'씩 바로 줘요(설정에서 금액 변경). 예: 4명이면 멍청이 -'+W(L.foolAmtOf(g||{})*3)+', 나머지 3명 각 +'+W(L.foolAmtOf(g||{}))+'. 멍청이 잔액이 모자라면 벌금처럼 있는 만큼만 내요. -는 그 사람의 가장 최근 1건을 정확히 되돌려요(받은 사람이 이미 썼으면 막혀요). 판 반영 때 다시 계산하지 않고, 기록 보기와 보기용 링크에 남아요.</p>'+
  '<p><b>벌금</b>: 카드의 벌금 +를 누르면 바로 반영되고, -를 누르면 그 사람의 가장 최근 벌금 1건이 취소돼요. 누른 사람이 잔액 있는 나머지 사람 각자에게 '+W(L.fineAmtOf(g||{}))+'씩 줘요 (4명 모두 잔액 있으면 -'+W(L.fineAmtOf(g||{})*3)+', 나머지는 각 +'+W(L.fineAmtOf(g||{}))+'). 판 정산과 따로예요. 잔액이 모자라면 경고를 띄우고 가진 만큼만 내요(뻑과 같은 방식). 벌금 내역에서 건별 취소, 방금 낸 건 "방금 벌금 취소". 금액은 설정에서 바꿔요. 예전에 욕·영어로 기록된 건도 벌금 횟수에 합쳐 보여요.</p>'+
  '<p><b>승리자 표시</b>: 판을 반영하면 이긴 사람 카드에 "👑 승"이 붙고, 다음 판 시작 화면에서 그 사람이 선으로 미리 골라져 있어요(바꿀 수 있어요). 무효(나가리)면 표시와 선이 그대로예요.</p>'+
  '<p><b>뻑 입력</b>: 뻑은 카드에서 정산하지 않아요. 판 끝 → 점수 화면의 "뻑" 칸에서 뻑 먹은 사람의 +를 눌러 첫뻑/2연뻑/3연뻑을 고르면, 판 반영 때 한 번만 정산해요. 낼 사람은 판 끝에 확정된 대로(죽은 사람 제외, 광팔이는 설정 따름). 예전 버전에서 카드로 이미 정산한 뻑은 그대로 두고 다시 계산하지 않아요(점수 화면에서 "되돌리고 여기서 입력" 가능).</p>'+
@@ -715,6 +772,7 @@ function renderMain(){
       '<div class="finerow"><span class="flab">벌금</span><button class="fine fminus" onclick="fineMinus('+i+')">-</button><span class="fn">'+fc[i].n+'</span><button class="fine fplus" onclick="doFine('+i+')">+</button></div>'+
       // 뻑은 카드에서 정산하지 않음(판 끝 점수 화면에서만 입력, 판 반영 때 한 번 정산). 예전 버전에서 카드로 넣어 둔 뻑만 표시
       (out?'':'<div class="finerow pkcard"><span class="flab" style="color:#1d3f8a">뻑</span><button class="pkb pkminus" onclick="pkMarkUI('+i+',-1)">-</button><span class="pkl">'+pkLabel(i)+'</span><button class="pkb pkplus" onclick="pkMarkUI('+i+',1)">+</button></div>')+
+      '<div class="finerow foolcard"><span class="flab" style="color:#6a1b9a">멍청이</span><button class="foolb foolminus" onclick="foolStepUI('+i+',-1)">-</button><span class="fn foolon">'+L.foolCount(g,i)+'</span><button class="foolb foolplus" onclick="foolStepUI('+i+',1)">+</button></div>'+
       '<div class="finerow gwcard"><span class="flab" style="color:#8a5a00">광팔이</span><button class="gwb gwminus" onclick="gwStepUI('+i+',-1)">-</button><span class="fn gwn">'+L.gwCount(g,i)+'</span><button class="gwb gwplus" onclick="gwStepUI('+i+',1)">+</button></div>'+
       (out?'':'<div class="gpcard"><label><input type="checkbox" class="gpcardck" '+(g.gpPick===i?'checked':'')+' onchange="toggleGpCard('+i+')">광팔이 쉼</label><label><input type="checkbox" class="deadcardck" '+((g.deadPick||{})[i]?'checked':'')+(L.deadOk(g)?'':' disabled title="광팔이가 있으면 나머지는 모두 진행"')+' onchange="toggleDeadCard('+i+')">죽음</label></div>')+fineCnt(fc[i])+'</div>';
   });
@@ -738,6 +796,13 @@ function gwStepUI(i,d){
   var dn=r.cleared&&r.cleared.length ? deadNote(r) : '';
   st={pkMsg:g.log[0]?g.log[0].txt:'', pkWarn:[dn,warn].filter(Boolean).join(' / ')}; render();
   if (dn||warn) alert([dn,warn].filter(Boolean).join('\n'));
+}
+function foolStepUI(i,d){
+  var tmp=JSON.stringify(g), r=L.foolStep(g,i,d);
+  if (!r.ok){ if (r.msg) alert(r.msg); return; }
+  prev=tmp;
+  var warn = r.capped ? '잔액 부족: '+r.rec.to.filter(function(x){ return x.pay<r.rec.each; }).map(function(x){ return g.players[x.i].name+' 님은 '+W(x.pay)+'만 냈어요'; }).join(', ') : '';
+  st={pkMsg:g.log[0]?g.log[0].txt:'', pkWarn:warn}; render(); if (warn) alert(warn);
 }
 function gwBusy(){ return L.gwCurRecs(g).length>0; }
 // 카드 죽음 체크: 판 끝 화면의 죽은 사람 체크와 같은 상태(g.deadPick). 광값·뻑 낼 사람에서 빠짐
@@ -824,17 +889,27 @@ function pkHtml(ro){
     var parts=String(e.txt).split(' / ').filter(function(x){ return /뻑 \+각/.test(x); });
     h+='<div class="log pklog">'+(++n)+'. '+(e.r?e.r+'판 · ':'')+esc(parts.join(' / '))+'</div>'; });
   (g.pks||[]).forEach(function(r){
-    h+='<div class="log pklog" data-id="'+r.id+'">'+(++n)+'. '+fmtTime(r.t)+' · '+(r.r?r.r+'판 · ':'')+esc(L.pkText(g, r))+' · 합계 +'+W(r.total)+(r.src==='round'?'':' (카드 즉시 정산)');
+    var nmj=function(j){ return g.players[j]?esc(g.players[j].name):'?'; }, capd=r.to.filter(function(x){ return x.pay<r.each; });
+    h+='<div class="log pklog" data-id="'+r.id+'">'+(++n)+'. '+(r.r?'<b>'+r.r+'판</b> · ':'')+'<b>'+nmj(r.i)+' '+L.PPEOK_NAMES[r.level]+' 먹음</b> → +'+W(r.total)+' 받음'+
+      '<br><span style="font-size:14px">낸 사람: '+(r.to.length?r.to.map(function(x){ return nmj(x.i)+' '+W(x.pay); }).join(', '):'없음')+' ('+r.points+'점 x '+W(r.ppp)+' = 각 '+W(r.each)+(capd.length?', 잔액 부족은 있는 만큼만':'')+')'+
+      ((r.dead||[]).length?' · 빠진 사람(죽음 등): '+r.dead.map(nmj).join('·'):'')+
+      (r.gp!==undefined&&r.gp>=0&&r.gp!==r.i&&!r.to.some(function(x){ return x.i===r.gp; })&&(r.dead||[]).indexOf(r.gp)<0?' · 광팔이라 안 냄: '+nmj(r.gp):'')+
+      '<br>'+fmtTime(r.t)+' · '+(r.src==='round'?'판 반영 때 정산':'예전 방식: 판 중에 카드 뻑 +로 바로 정산')+'</span>';
     if (!ro){
-      h+='<br><button class="b3 small pkdeadbtn" onclick="st.pkEdit=(st.pkEdit==='+r.id+'?0:'+r.id+');render()">죽은 사람 선택/수정</button>';
-      if (st.pkEdit===r.id){ h+='<div class="pkdeadpick">';
-        g.players.forEach(function(p,j){ if (j===r.i) return; var on=(r.dead||[]).indexOf(j)>=0, x=r.to.filter(function(t){ return t.i===j; })[0];
-          h+='<label class="ck"><input type="checkbox" class="pkdeadck" data-j="'+j+'" '+(on?'checked':'')+' onchange="pkRecDeadUI('+r.id+','+j+',this.checked)">'+esc(p.name)+' 죽음'+(x?' (냄 '+W(x.pay)+')':'')+'</label>'; });
+      h+='<br><button class="b3 small pkdeadbtn" onclick="st.pkEdit=(st.pkEdit==='+r.id+'?0:'+r.id+');render()">낸 사람 선택/수정 (죽은 사람 빼기)</button>';
+      if (st.pkEdit===r.id){ h+='<div class="pkdeadpick"><p style="font-size:14px;color:#555;margin:4px 0">체크 = 낸 사람. 체크를 풀면 그 사람 몫을 돌려주고, 체크하면 각 '+W(r.each)+'(잔액 한도)을 내요</p>';
+        g.players.forEach(function(p,j){ if (j===r.i) return; var x=r.to.filter(function(t){ return t.i===j; })[0];
+          h+='<label class="ck"><input type="checkbox" class="pkpayck" data-j="'+j+'" '+(x?'checked':'')+' onchange="pkRecPayerUI('+r.id+','+j+',this.checked)">'+esc(p.name)+(x?' 냄 '+W(x.pay):' 안 냄')+'</label>'; });
         h+='</div>'; }
     }
     h+='</div>'; });
   if (!n) h+='<p>아직 뻑 내역이 없어요</p>';
-  return h+'<p style="font-size:15px;color:#555">뻑은 카드나 판 끝 점수 화면에서 체크해 두면 판 반영 때 한 번만 정산해요. 이미 정산된 뻑에서 죽은 사람을 고르면 그 사람이 낸 돈을 정확히 돌려줘요.</p></div>';
+  return h+'<p style="font-size:15px;color:#555">이름 옆 "먹음"이 뻑 먹은(돈 받은) 사람이고, "낸 사람"이 돈을 낸 사람이에요. 판 번호는 그 뻑이 나온 판이에요. 뻑은 카드나 판 끝 점수 화면에서 체크해 두면 판 반영 때 한 번만 정산해요. 이미 정산된 뻑도 "낸 사람 선택/수정"에서 고칠 수 있어요: 빼면 그 사람 몫을 정확히 돌려주고, 넣으면 같은 금액을 내요.</p></div>';
+}
+function pkRecPayerUI(id,j,pays){
+  var tmp=JSON.stringify(g), r=L.pkRecPayer(g,id,j,pays);
+  if (!r.ok){ if (r.msg) alert(r.msg); return render(); }
+  prev=tmp; st.pkMsgList=r.txt; render();
 }
 function pkRecDeadUI(id,j,on){
   var tmp=JSON.stringify(g), r=L.pkRecDead(g,id,j,on);
@@ -1085,6 +1160,7 @@ function renderSet(){
    '<p>첫뻑 점수 (점)</p><input type="number" id="spk" value="'+L.ppeokScoreOf(g)+'">'+
    '<p>연뻑 배수 (2연뻑 = 첫뻑 x배수, 3연뻑 = 2연뻑 x배수)</p><input type="number" id="spm" value="'+L.ppeokMultOf(g)+'">'+
    '<p>벌금 1회 금액 (받는 사람 1명당 원)</p><input type="number" id="sfa" value="'+L.fineAmtOf(g)+'">'+
+   '<p>멍청이 1회 금액 (받는 사람 1명당 원)</p><input type="number" id="sfo" value="'+L.foolAmtOf(g)+'">'+
    '<p>뻑 값 낼 사람</p><select id="spp" style="font-size:20px;padding:10px;width:100%;border-radius:10px"><option value="play" '+(L.ppeokPayerMode(g)==='play'?'selected':'')+'>이번 판에 친 사람만 (광팔이·죽은 사람 제외, 기본)</option><option value="seated" '+(L.ppeokPayerMode(g)==='seated'?'selected':'')+'>광팔이도 냄 (죽은 사람은 제외)</option></select>'+
    '<p style="font-size:16px;color:#555">광값 낼 사람: 광팔이와 선을 뺀 나머지 (2·3번째 주자, 죽은 사람 제외)</p>'+
    '<button class="b2" onclick="saveSet()">저장</button>'+
@@ -1092,7 +1168,7 @@ function renderSet(){
    '<button class="b3" onclick="view=\'main\';render()">돌아가기</button></div>';
   app.innerHTML=h;
 }
-function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value; if(!(pks>0)||!(pkm>0)) return alert('뻑 점수·배수를 확인해 주세요'); var fa=+$('sfa').value; if(!(fa>0)) return alert('벌금 금액을 확인해 주세요'); snap(); g.fineAmt=fa; g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokPayer=$('spp').value==='seated'?'seated':'play'; g.gwangPrice=gp; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
+function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value; if(!(pks>0)||!(pkm>0)) return alert('뻑 점수·배수를 확인해 주세요'); var fa=+$('sfa').value; if(!(fa>0)) return alert('벌금 금액을 확인해 주세요'); var fo=+$('sfo').value; if(!(fo>0)) return alert('멍청이 금액을 확인해 주세요'); snap(); g.fineAmt=fa; g.foolAmt=fo; g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokPayer=$('spp').value==='seated'?'seated':'play'; g.gwangPrice=gp; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
 function resetAll(){ if(!confirm('모든 기록을 지우고 새로 시작할까요?')) return; if(!confirm('정말 지울까요? 되돌릴 수 없어요')) return; g=null; prev=null; localStorage.removeItem(KEY); view='main'; render(); }
 
 function renderEnd(){
