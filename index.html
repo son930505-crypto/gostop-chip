@@ -343,7 +343,9 @@ var L = (function(){
   // ===== 멍청이: 카드 + 한 번마다 누른 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 멍청이 금액(기본 5,000원)을 즉시 줌 =====
   // 멍청이 잔액이 모자라면 벌금과 같은 방식: 사람 순서대로 남은 잔액만큼만. - 는 그 사람의 가장 최근 1건을 정확히 되돌림(받은 사람이 이미 썼으면 막힘). 판 반영 때 다시 계산 안 함
   function foolAmtOf(g){ return num(g.foolAmt)>0 ? num(g.foolAmt) : 5000; }
-  function foolCount(g, i){ return (g.fools||[]).filter(function(x){ return x.i===i; }).length; }
+  // 카드 횟수와 - 대상은 이번 판(r = g.round+1) 것만 → 판 반영·무효로 다음 판이 되면 0으로 보임(돈·기록은 그대로, 광팔이 +와 같은 방식)
+  function foolCur(g, i){ return (g.fools||[]).filter(function(x){ return x.i===i && x.r===g.round+1; }); }
+  function foolCount(g, i){ return foolCur(g, i).length; }
   function foolText(g, r){
     var nm = function(j){ return g.players[j] ? g.players[j].name : '?'; }, cap = r.to.filter(function(x){ return x.pay < r.each; });
     return nm(r.i)+' 멍청이 -'+won(r.total)+' ('+(r.to.length?r.to.map(function(x){ return nm(x.i); }).join('·')+' 각 +'+won(r.each):'받을 사람 없음')+(cap.length?', 잔액 부족: '+cap.map(function(x){ return nm(x.i)+' '+won(x.pay)+'만'; }).join(', '):'')+')';
@@ -362,8 +364,8 @@ var L = (function(){
       g.fools.push(rec); g.log.unshift({t:'멍청이', r:g.round+1, txt:foolText(g, rec)});
       return {ok:true, rec:rec, capped: to.some(function(x){ return x.pay < each; })};
     }
-    var mine = (g.fools||[]).filter(function(x){ return x.i===i; }), last = mine[mine.length-1];
-    if (!last) return {ok:false, msg:p.name+' 님은 되돌릴 멍청이가 없어요'};
+    var mine = foolCur(g, i), last = mine[mine.length-1];
+    if (!last) return {ok:false, msg:p.name+' 님은 이번 판에 되돌릴 멍청이가 없어요 (지난 판 멍청이는 기록 보기에서 확인)'};
     var short = last.to.filter(function(x){ return !g.players[x.i] || g.players[x.i].bal < x.pay; });
     if (short.length) return {ok:false, msg:short.map(function(x){ return g.players[x.i].name; }).join('·')+' 님이 멍청이로 받은 돈을 이미 써서 되돌릴 수 없어요'};
     last.to.forEach(function(x){ g.players[x.i].bal -= x.pay; }); p.bal += last.total; g.fools.splice(g.fools.indexOf(last), 1);
@@ -708,7 +710,7 @@ function RULES(){
  '<p><b>죽음(포기)</b>: 죽은 사람은 그 판 점수 정산에서 빠지고(내지도 받지도 않음) 광값·뻑 값도 내지 않아요. 광팔이와 죽은 사람은 함께 있을 수 있어요(4명이면 광팔이 1명 + 죽음 1명 → 2명이 침). 카드나 판 끝 화면에서 "죽음"을 체크해요. 이미 정산된 광값이 있을 때 죽음 체크가 바뀌면 자동으로 다시 계산해요(죽은 사람 몫은 돌려주고 남은 사람끼리 다시, 기록에 "재정산"). 판 반영 때 정산된 뻑은 "뻑 내역"에서 죽은 사람을 고르면 그 사람 몫을 돌려줘요.</p>'+
  '<p><b>광값</b>: 카드의 광팔이 +를 누를 때마다(광이나 쌍피 1개) 그 사람이 광팔이로 체크되고, 광팔이 본인과 선을 뺀 나머지(2·3번째 주자) 각자에게서 '+W(gp)+'씩 바로 받아요. 예: 4명이면 2명에게서 각 '+W(gp)+', 광팔이는 +'+W(gp*2)+'. 죽은 사람은 내지 않아요. 선은 판 끝 화면에서 고른 선, 없으면 직전 판 승리자예요(카드에 "선" 표시). 선을 바꾸면 이미 받은 광값을 자동으로 다시 계산해요(기록에 "재정산"). -는 가장 최근 1개를 정확히 환불해요(받은 돈을 이미 썼으면 막혀요). 판 끝 화면의 광값 +/-도 같은 정산이고, 판 반영 때 다시 계산하지 않아요.</p>'+
  '<p><b>충전</b>: 기본은 모두 0원으로 시작해요. 각자 카드의 +1만원, +5만원, +10만원 버튼 중 하나를 누르면 그 금액이 바로 들어가고 충전 내역에 금액별로 남아요. 잘못 눌렀으면 "방금 충전 취소"나 충전 내역의 취소 버튼으로 되돌려요(판에서 이미 쓴 칩은 취소 불가). 충전한 돈은 모두 딜러 계좌(장부)에 모여요.</p>'+
- '<p><b>멍청이</b>: 카드의 멍청이 +를 누를 때마다 그 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 '+W(L.foolAmtOf(g||{}))+'씩 바로 줘요(설정에서 금액 변경). 예: 4명이면 멍청이 -'+W(L.foolAmtOf(g||{})*3)+', 나머지 3명 각 +'+W(L.foolAmtOf(g||{}))+'. 멍청이 잔액이 모자라면 벌금처럼 있는 만큼만 내요. -는 그 사람의 가장 최근 1건을 정확히 되돌려요(받은 사람이 이미 썼으면 막혀요). 판 반영 때 다시 계산하지 않고, 기록 보기와 보기용 링크에 남아요.</p>'+
+ '<p><b>멍청이</b>: 카드의 멍청이 +를 누를 때마다 그 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 '+W(L.foolAmtOf(g||{}))+'씩 바로 줘요(설정에서 금액 변경). 예: 4명이면 멍청이 -'+W(L.foolAmtOf(g||{})*3)+', 나머지 3명 각 +'+W(L.foolAmtOf(g||{}))+'. 멍청이 잔액이 모자라면 벌금처럼 있는 만큼만 내요. -는 그 사람의 가장 최근 1건을 정확히 되돌려요(받은 사람이 이미 썼으면 막혀요). 판 반영 때 다시 계산하지 않고, 기록 보기와 보기용 링크에 "몇 판"으로 남아요. 다음 판이 되면(판 반영·무효) 카드 횟수는 0으로 돌아가고, 지난 판 멍청이는 -로 취소할 수 없어요.</p>'+
  '<p><b>벌금</b>: 카드의 벌금 +를 누르면 바로 반영되고, -를 누르면 그 사람의 가장 최근 벌금 1건이 취소돼요. 누른 사람이 잔액 있는 나머지 사람 각자에게 '+W(L.fineAmtOf(g||{}))+'씩 줘요 (4명 모두 잔액 있으면 -'+W(L.fineAmtOf(g||{})*3)+', 나머지는 각 +'+W(L.fineAmtOf(g||{}))+'). 판 정산과 따로예요. 잔액이 모자라면 경고를 띄우고 가진 만큼만 내요(뻑과 같은 방식). 벌금 내역에서 건별 취소, 방금 낸 건 "방금 벌금 취소". 금액은 설정에서 바꿔요. 예전에 욕·영어로 기록된 건도 벌금 횟수에 합쳐 보여요.</p>'+
  '<p><b>승리자 표시</b>: 판을 반영하면 이긴 사람 카드에 "👑 승"이 붙고, 다음 판 시작 화면에서 그 사람이 선으로 미리 골라져 있어요(바꿀 수 있어요). 무효(나가리)면 표시와 선이 그대로예요.</p>'+
  '<p><b>뻑 입력</b>: 뻑은 카드에서 정산하지 않아요. 판 끝 → 점수 화면의 "뻑" 칸에서 뻑 먹은 사람의 +를 눌러 첫뻑/2연뻑/3연뻑을 고르면, 판 반영 때 한 번만 정산해요. 낼 사람은 판 끝에 확정된 대로(죽은 사람 제외, 광팔이는 설정 따름). 예전 버전에서 카드로 이미 정산한 뻑은 그대로 두고 다시 계산하지 않아요(점수 화면에서 "되돌리고 여기서 입력" 가능).</p>'+
