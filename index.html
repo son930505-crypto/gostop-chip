@@ -27,7 +27,15 @@ button{font-size:22px;font-weight:700;border:0;border-radius:14px;padding:16px;w
 .gpcard{display:flex;align-items:center;justify-content:center;gap:4px;font-size:15px;font-weight:700;margin-top:6px;color:#333}.gpcard input{width:20px;height:20px}
 .finerow .pkl{min-width:44px;font-size:14px;font-weight:700;text-align:center;color:#1d3f8a}.finerow button.pkb{background:#1d3f8a}.pkdet{font-size:13px;color:#1d3f8a;text-align:center;margin:-2px 0 6px;line-height:1.5}.pkdet button.pksep{width:auto;min-width:0;height:auto;padding:3px 8px;margin:2px 0 0;font-size:13px;color:#fff;border:0;border-radius:8px;background:#3b5fb0}.pknth{font-size:14px;color:#1d3f8a}
 .finerow button.gwb{background:#b07800}.finerow button.foolb{background:#6a1b9a}.gpcard label{display:flex;align-items:center;gap:3px}.gpcard{gap:10px}
-.card.deadon{opacity:.75}
+.card.deadon{background:#ffe3e3;box-shadow:inset 0 0 0 4px #c62828}
+.deadbadge{display:inline-block;background:#c62828;color:#fff;font-size:18px;font-weight:900;border-radius:10px;padding:4px 12px;margin:0 0 6px}
+/* 카드 -/+ 버튼: 손가락으로 누르기 쉽게 56px, 이름은 위 줄 */
+.card .finerow{flex-wrap:wrap;gap:6px;margin-top:10px}.card .finerow .flab{flex-basis:100%;text-align:center;font-size:16px;line-height:1.1}
+.card .finerow button{width:56px;height:56px;padding:0;font-size:30px;font-weight:900;border-radius:14px;touch-action:manipulation}
+.card .finerow .fn{min-width:34px;font-size:26px}.card .finerow .pkl{min-width:40px;flex:0 1 auto;font-size:15px}
+.card .gpcard{margin-top:10px}.card .gpcard label{gap:8px;font-size:19px;padding:8px 10px;border:2px solid #bbb;border-radius:12px;background:#fafafa}.card .gpcard input{width:30px;height:30px}
+.card.deadon .gpcard label{border-color:#c62828;background:#fff;color:#c62828}
+.tapnote{font-size:14px;color:#cfe;text-align:center;margin:6px 0 0}
 .winb{display:inline-block;background:#f5c542;color:#5a3d00;border-radius:8px;padding:1px 6px;font-size:14px;vertical-align:middle}
 .card.gpon{outline:3px solid #f5c542}
 .fcnt{font-size:15px;color:#7a2e2e;margin-top:6px}
@@ -897,7 +905,8 @@ function renderMain(){
   var h=flash+'<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+'</div></div><div class="grid">';
   g.players.forEach(function(p,i){
     var out=p.bal<=0;
-    h+='<div class="card '+(out?'out':'')+(g.gpPick===i&&!out?' gpon':'')+((g.deadPick||{})[i]&&!out?' deadon':'')+'"><div class="nm">'+(L.lastWinner(g)===i?'<span class="winb">👑 승</span> ':'')+(!out&&L.curSeon(g)===i?'<span class="seonb">선</span> ':'')+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
+    var dOn=(g.deadPick||{})[i]&&!out;
+    h+='<div class="card '+(out?'out':'')+(g.gpPick===i&&!out?' gpon':'')+(dOn?' deadon':'')+'" data-i="'+i+'" onclick="cardTap(event,'+i+')">'+(dOn?'<div class="deadbadge">죽음(쉼)'+(g.gpPick===i?' · 광팔이':'')+'</div>':'')+'<div class="nm">'+(L.lastWinner(g)===i?'<span class="winb">👑 승</span> ':'')+(!out&&L.curSeon(g)===i?'<span class="seonb">선</span> ':'')+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
       '<div class="sub">넣은 돈 '+W(p.invested)+' ('+p.charges+'회)</div>'+
       (out?'<div class="tag">쉬는 중 (충전하면 참여)</div>':'')+
       '<div class="chgrow3">'+L.CHARGE_AMTS.map(function(a){ return '<button class="b2 chg" data-amt="'+a+'" onclick="doCharge('+i+','+a+')">+'+(a/10000)+'만원</button>'; }).join('')+'</div>'+
@@ -908,7 +917,7 @@ function renderMain(){
       '<div class="finerow gwcard"><span class="flab" style="color:#8a5a00">광팔이</span><button class="gwb gwminus" onclick="gwStepUI('+i+',-1)">-</button><span class="fn gwn">'+L.gwCount(g,i)+'</span><button class="gwb gwplus" onclick="gwStepUI('+i+',1)">+</button></div>'+
       (out?'':'<div class="gpcard"><label><input type="checkbox" class="deadcardck" '+((g.deadPick||{})[i]?'checked':'')+(L.deadOk(g)?'':' disabled title="광팔이가 있으면 나머지는 모두 진행"')+' onchange="toggleDeadCard('+i+')">죽음(쉼)'+(g.gpPick===i?' · 광팔이':'')+'</label></div>')+fineCnt(fc[i])+'</div>';
   });
-  h+='</div>'+orderNote()+'<button class="b1 big" onclick="toS1()">판 끝! 점수 넣기</button>'+
+  h+='</div><p class="tapnote">카드 흰 바탕 빈 곳을 눌러도 죽음(쉼)이 켜지고 꺼져요 (버튼은 그대로)</p>'+orderNote()+'<button class="b1 big" onclick="toS1()">판 끝! 점수 넣기</button>'+
    '<div class="row"><button class="b3 small" onclick="doVoid()">무효 (나가리·쇼당)</button><button class="b3 small" onclick="undo()">방금 것 되돌리기</button></div>'+
    '<div class="row"><button class="b3 small" onclick="view=\'fine\';render()">벌금 내역</button><button class="b3 small" onclick="view=\'pk\';st={};render()">뻑 내역</button></div>'+
    '<div class="row"><button class="b3 small" onclick="view=\'chg\';render()">충전 내역</button><button class="b3 small" onclick="view=\'log\';render()">기록 보기</button><button class="b3 small" onclick="view=\'set\';render()">설정</button></div>'+
@@ -939,6 +948,14 @@ function foolStepUI(i,d){
 function gwBusy(){ return L.gwCurRecs(g).length>0; }
 // 카드 죽음 체크: 판 끝 화면의 죽은 사람 체크와 같은 상태(g.deadPick). 광값·뻑 낼 사람에서 빠짐
 // 이미 즉시 정산된 뻑·광값이 있으면 죽음 체크를 바꾸는 순간 자동 재정산(죽은 사람 몫 환불·재분배)
+// 카드 빈 곳 터치 = 죽음(쉼) 체크와 같음. 버튼·체크칸·글자 링크 등을 누른 건 무시
+function cardTap(e,i){
+  var t=e&&e.target; if (!t || !t.closest) return;
+  if (t.closest('button,input,label,a,select,textarea,[onclick]:not(.card),.pkdet')) return;
+  var card=t.closest('.card'); if (!card || card.classList.contains('out')) return;
+  var ck=card.querySelector('.deadcardck'); if (!ck || ck.disabled) return;
+  toggleDeadCard(i);
+}
 function toggleDeadCard(i){
   var on=!(g.deadPick||{})[i], tmp=JSON.stringify(g), r=L.setDead(g,i,on);
   if (!r.ok){ if (r.msg) alert(r.msg); if (view==='s1') seatApply(); return render(); }
