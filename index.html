@@ -23,6 +23,8 @@ main{padding:12px;max-width:720px;margin:0 auto}
 button{font-size:22px;font-weight:700;border:0;border-radius:14px;padding:16px;width:100%;margin-top:10px;cursor:pointer}
 .b1{background:#e63946;color:#fff}.b2{background:#2a9d8f;color:#fff}.b3{background:#eee;color:#222}.b4{background:#457b9d;color:#fff}
 .small{font-size:17px;padding:10px;margin-top:6px}
+.finerow{display:flex;gap:5px;margin-top:6px}.finerow button{margin:0;padding:9px 2px;font-size:17px;flex:1;background:#7a2e2e;color:#fff}
+.fcnt{font-size:15px;color:#7a2e2e;margin-top:6px}
 .chgrow3{display:flex;gap:5px;margin-top:8px}.chgrow3 button{margin:0;padding:10px 2px;font-size:16px;white-space:nowrap;flex:1}
 .row{display:flex;gap:8px}.row>*{flex:1}
 .box{background:#fff;color:#111;border-radius:16px;padding:16px;margin-bottom:12px}
@@ -263,6 +265,49 @@ var L = (function(){
     g.log.unshift({t:'충전 취소', r:g.round, txt:p.name+' 충전 취소 -'+won(c.amt)+' (잔액 '+won(p.bal)+')'});
     return true;
   }
+  // ===== 벌금: 욕·영어 1회당, 누른 사람이 나머지(잔액 있는 사람 전원) 각자에게 벌금 금액씩. 판 정산과 별개로 즉시 처리 =====
+  var FINE_KINDS = {swear:'욕', eng:'영어'};
+  function fineAmtOf(g){ return num(g.fineAmt)>0 ? num(g.fineAmt) : 1000; }
+  // 미리 계산 (반영 안 함). 잔액 한도: 뻑 정산과 같은 방식으로 받는 사람 순서대로 남은 잔액 안에서만 냄
+  function finePreview(g, i, kind){
+    var each = fineAmtOf(g), bal = g.players[i].bal, to = [];
+    g.players.forEach(function(p,j){ if (j===i || p.bal<=0) return; var pay = Math.min(each, Math.max(0, bal)); bal -= pay; to.push({i:j, pay:pay, capped: pay<each}); });
+    var total = to.reduce(function(s,x){ return s+x.pay; }, 0);
+    return {i:i, kind:kind==='eng'?'eng':'swear', each:each, to:to, total:total, capped: to.some(function(x){ return x.capped; }), full: each*to.length};
+  }
+  function fineText(g, f){
+    var p = g.players[f.i], nm = function(j){ return g.players[j] ? g.players[j].name : '?'; };
+    var cap = f.to.filter(function(x){ return x.pay < f.each; });
+    return (p?p.name:'?')+' '+FINE_KINDS[f.kind]+' 벌금 -'+won(f.total)+' ('+f.to.map(function(x){ return nm(x.i); }).join('·')+' +각 '+won(f.each)+(cap.length?', 잔액 부족: '+cap.map(function(x){ return nm(x.i)+' '+won(x.pay)+'만'; }).join(', '):'')+')';
+  }
+  function fine(g, i, kind, now){
+    var f = finePreview(g, i, kind); if (!f.to.length || g.players[i].bal<=0) return null;
+    if (!g.fines) g.fines = [];
+    g.fineSeq = Math.max(g.fineSeq||0, g.fines.reduce(function(m,x){ return Math.max(m, x.id); }, 0)) + 1;
+    g.players[i].bal -= f.total; f.to.forEach(function(x){ g.players[x.i].bal += x.pay; });
+    var rec = {id:g.fineSeq, t: now || Date.now(), i:i, kind:f.kind, each:f.each, to:f.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:f.total, after:g.players[i].bal};
+    g.fines.push(rec);
+    g.log.unshift({t:'벌금', r:g.round, txt:fineText(g, rec)});
+    return rec;
+  }
+  // 취소: 받은 사람들이 받은 만큼 아직 잔액에 가지고 있을 때만 (정확히 되돌림)
+  function canUndoFine(g, id){
+    var f = (g.fines||[]).filter(function(x){ return x.id===id; })[0];
+    return !!f && f.to.every(function(x){ return g.players[x.i] && g.players[x.i].bal >= x.pay; });
+  }
+  function undoFine(g, id){
+    if (!canUndoFine(g, id)) return false;
+    var k = g.fines.map(function(x){ return x.id; }).indexOf(id), f = g.fines[k];
+    f.to.forEach(function(x){ g.players[x.i].bal -= x.pay; }); g.players[f.i].bal += f.total; g.fines.splice(k, 1);
+    g.log.unshift({t:'벌금 취소', r:g.round, txt:g.players[f.i].name+' '+FINE_KINDS[f.kind]+' 벌금 취소 (+'+won(f.total)+' 되돌림)'});
+    return true;
+  }
+  function lastFine(g){ var f = g.fines||[]; return f.length ? f[f.length-1] : null; }
+  function fineCounts(g){
+    return g.players.map(function(p,i){ var c = {swear:0, eng:0, paid:0, got:0};
+      (g.fines||[]).forEach(function(f){ if (f.i===i){ c[f.kind]++; c.paid += f.total; } f.to.forEach(function(x){ if (x.i===i) c.got += x.pay; }); });
+      return c; });
+  }
   function lastCharge(g){ var c = g.chg||[]; return c.length ? c[c.length-1] : null; }
   // 충전 요약: 사람별 시작 금액·누적 충전액·넣은 돈, 총 충전액, 딜러 장부 합계
   function chargeSummary(g){
@@ -299,18 +344,21 @@ var L = (function(){
   function unb64u(str){ str=String(str).replace(/-/g,'+').replace(/_/g,'/'); while (str.length%4) str+='='; var s=atob(str), b=new Uint8Array(s.length); for (var i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
   function pipeBytes(bytes, ts){ return new Response(new Blob([bytes]).stream().pipeThrough(ts)).arrayBuffer().then(function(ab){ return new Uint8Array(ab); }); }
   function packState(g, now){
-    return { v:1, t: now || Date.now(), g: { limit:g.limit, ppp:g.ppp, nextMult:g.nextMult, round:g.round, gwangpal:g.gwangpal, ctScore:g.ctScore, giveupMult:g.giveupMult, gwangPrice:gwangPriceOf(g), gwangPayer:gwangMode(g), ppeokScore:ppeokScoreOf(g), ppeokMult:ppeokMultOf(g), ppeokPayer:ppeokPayerMode(g),
+    return { v:1, t: now || Date.now(), g: { limit:g.limit, ppp:g.ppp, nextMult:g.nextMult, round:g.round, gwangpal:g.gwangpal, ctScore:g.ctScore, giveupMult:g.giveupMult, gwangPrice:gwangPriceOf(g), gwangPayer:gwangMode(g), ppeokScore:ppeokScoreOf(g), ppeokMult:ppeokMultOf(g), ppeokPayer:ppeokPayerMode(g), fineAmt:fineAmtOf(g),
       players: g.players.map(function(p){ return {name:p.name, bal:p.bal, charges:p.charges, invested:p.invested}; }),
       chg: (g.chg||[]).map(function(c){ return {id:c.id, t:c.t, i:c.i, amt:c.amt, after:c.after}; }),
+      fines: (g.fines||[]).map(function(f){ return {id:f.id, t:f.t, i:f.i, kind:f.kind, each:f.each, to:f.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:f.total, after:f.after}; }),
       log: g.log.map(function(l){ return {t:l.t, r:l.r, txt:l.txt}; }) } };
   }
   function num(x){ x=+x; return isFinite(x) ? x : 0; }
   function cleanState(d){
     if (!d || d.v!==1 || !d.g || !Array.isArray(d.g.players) || !d.g.players.length) throw new Error('잘못된 링크');
     var s=d.g;
-    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokPayer:s.ppeokPayer==='play'?'play':'seated',
+    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokPayer:s.ppeokPayer==='play'?'play':'seated', fineAmt:num(s.fineAmt)>0?num(s.fineAmt):1000,
       players: s.players.map(function(p){ return {name:String(p&&p.name||''), bal:num(p&&p.bal), charges:num(p&&p.charges), invested:num(p&&p.invested)}; }),
       chg: (Array.isArray(s.chg)?s.chg:[]).map(function(c){ return {id:num(c&&c.id), t:num(c&&c.t), i:Math.floor(num(c&&c.i)), amt:num(c&&c.amt), after:num(c&&c.after)}; }).filter(function(c){ return c.i>=0 && c.i<s.players.length; }),
+      fines: (Array.isArray(s.fines)?s.fines:[]).map(function(f){ return {id:num(f&&f.id), t:num(f&&f.t), i:Math.floor(num(f&&f.i)), kind:(f&&f.kind)==='eng'?'eng':'swear', each:num(f&&f.each), total:num(f&&f.total), after:num(f&&f.after),
+        to:(Array.isArray(f&&f.to)?f.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; })}; }).filter(function(f){ return f.i>=0 && f.i<s.players.length; }),
       log: (Array.isArray(s.log)?s.log:[]).map(function(l){ return {t:String(l&&l.t||''), r:num(l&&l.r), txt:String(l&&l.txt||'')}; }) } };
   }
   function encodeState(g, now){
@@ -326,7 +374,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -360,6 +408,7 @@ function RULES(){
  '<p><b>죽음(포기)</b>: 죽은 사람은 그 판 점수 정산에서 빠져요(내지도 받지도 않음). 광값도 어떤 설정에서든 내지 않아요.</p>'+
  '<p><b>광값</b>: 광팔이가 받은 패에서 광이나 쌍피 개수를 세요. 개수 x 개당 금액(지금 '+W(gp)+')을 광값 낼 사람 각각이 광팔이에게 줘요. 판에서 이기고 지는 것과 상관없어요. 지금 설정: <b>'+esc(who)+'</b> (설정에서 "선 포함 치는 사람 모두"로 바꿀 수 있어요). 예: 2개면 두 번째·세 번째 주자가 한 명당 '+W(gp*2)+'씩. 0개면 광값 없음.</p>'+
  '<p><b>충전</b>: 기본은 모두 0원으로 시작해요. 각자 카드의 +1만원, +5만원, +10만원 버튼 중 하나를 누르면 그 금액이 바로 들어가고 충전 내역에 금액별로 남아요. 잘못 눌렀으면 "방금 충전 취소"나 충전 내역의 취소 버튼으로 되돌려요(판에서 이미 쓴 칩은 취소 불가). 충전한 돈은 모두 딜러 계좌(장부)에 모여요.</p>'+
+ '<p><b>벌금 (욕·영어)</b>: 카드의 "욕"이나 "영어"를 누르면 바로 반영돼요. 누른 사람이 잔액 있는 나머지 사람 각자에게 '+W(L.fineAmtOf(g||{}))+'씩 줘요 (4명 모두 잔액 있으면 -'+W(L.fineAmtOf(g||{})*3)+', 나머지는 각 +'+W(L.fineAmtOf(g||{}))+'). 판 정산과 따로예요. 잔액이 모자라면 경고를 띄우고 가진 만큼만 내요(뻑과 같은 방식). 벌금 내역에서 건별 취소, 방금 낸 건 "방금 벌금 취소". 금액은 설정에서 바꿔요.</p>'+
  '<p><b>잔액 한도</b>: 자기 잔액보다 많이 낼 수 없어요. 광값은 점수 정산을 하고 남은 잔액 안에서 내요. 잔액이 0원인 사람은 쉬는 중이라 판에 참여할 수 없고, 본인이 충전을 누르면 바로 다시 참여해요.</p>'+
  '<p><b>점수</b>: 고 보너스 빼고 난 점수를 넣어 주세요 (3명이 칠 때 3점부터 남).</p>'+
  SHAREHELP+'</details>';
@@ -370,7 +419,7 @@ function render(){
   var m=$('mult');
   if (g && g.nextMult>1){ m.textContent='다음 판 x'+g.nextMult; m.classList.remove('hide'); } else m.classList.add('hide');
   if (!g) return renderSetup();
-  ({share:renderShare, main:renderMain, s1:renderS1, s2:renderS2, s3:renderS3, log:renderLog, chg:renderChg, end:renderEnd, set:renderSet, void:renderVoid})[view]();
+  ({share:renderShare, main:renderMain, s1:renderS1, s2:renderS2, s3:renderS3, log:renderLog, chg:renderChg, fine:renderFine, end:renderEnd, set:renderSet, void:renderVoid})[view]();
   save();
 }
 
@@ -399,7 +448,11 @@ function orderNote(){
   return '';
 }
 function renderMain(){
-  var lc=L.lastCharge(g), flash='';
+  var lc=L.lastCharge(g), flash='', lf=L.lastFine(g), fc=L.fineCounts(g);
+  if (lf && st.fineFlash===lf.id){
+    flash='<div class="flash" style="background:#7a2e2e">'+esc(L.fineText(g,lf))+(st.fineWarn?'<br><span style="color:#ffd166">'+esc(st.fineWarn)+'</span>':'')+
+      (L.canUndoFine(g,lf.id)?'<button class="b3 small" onclick="cancelFine('+lf.id+')">방금 벌금 취소</button>':'')+'</div>';
+  }
   if (lc && st.flash===lc.id){
     flash='<div class="flash">'+esc(g.players[lc.i].name)+' +'+W(lc.amt)+' 충전 완료 (잔액 '+W(g.players[lc.i].bal)+')'+
       (L.canUndoCharge(g,lc.id)?'<button class="b3 small" onclick="cancelCharge('+lc.id+')">방금 충전 취소</button>':'')+'</div>';
@@ -410,15 +463,45 @@ function renderMain(){
     h+='<div class="card '+(out?'out':'')+'"><div class="nm">'+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
       '<div class="sub">넣은 돈 '+W(p.invested)+' ('+p.charges+'회)</div>'+
       (out?'<div class="tag">쉬는 중 (충전하면 참여)</div>':'')+
-      '<div class="chgrow3">'+L.CHARGE_AMTS.map(function(a){ return '<button class="b2 chg" data-amt="'+a+'" onclick="doCharge('+i+','+a+')">+'+(a/10000)+'만원</button>'; }).join('')+'</div></div>';
+      '<div class="chgrow3">'+L.CHARGE_AMTS.map(function(a){ return '<button class="b2 chg" data-amt="'+a+'" onclick="doCharge('+i+','+a+')">+'+(a/10000)+'만원</button>'; }).join('')+'</div>'+
+      '<div class="finerow"><button class="fine" data-k="swear" onclick="doFine('+i+',\'swear\')">욕</button><button class="fine" data-k="eng" onclick="doFine('+i+',\'eng\')">영어</button></div>'+fineCnt(fc[i])+'</div>';
   });
   h+='</div>'+orderNote()+'<button class="b1 big" onclick="toS1()">판 끝! 점수 넣기</button>'+
    '<div class="row"><button class="b3 small" onclick="doVoid()">무효 (나가리·쇼당)</button><button class="b3 small" onclick="undo()">방금 것 되돌리기</button></div>'+
+   '<button class="b3 small" onclick="view=\'fine\';render()">벌금 내역 (욕·영어)</button>'+
    '<div class="row"><button class="b3 small" onclick="view=\'chg\';render()">충전 내역</button><button class="b3 small" onclick="view=\'log\';render()">기록 보기</button><button class="b3 small" onclick="view=\'set\';render()">설정</button></div>'+
    '<button class="b2" onclick="view=\'share\';render()">보기용 링크 만들기 (참가자 공유)</button>'+
    '<button class="b4" onclick="view=\'end\';render()">끝내고 정산하기</button>'+RULES();
   app.innerHTML=h;
 }
+function fineCnt(c){ return '<div class="fcnt">욕 '+c.swear+'회 · 영어 '+c.eng+'회'+(c.paid||c.got?'<br>낸 벌금 '+(c.paid?'-':'')+W(c.paid)+' / 받은 벌금 '+(c.got?'+':'')+W(c.got):'')+'</div>'; }
+// 벌금: 누르면 바로 반영. 누른 사람이 잔액 있는 나머지 전원에게 벌금 금액씩. 잔액 한도는 뻑 정산과 같은 방식
+function doFine(i,kind){
+  var p=g.players[i], nm=L.FINE_KINDS[kind];
+  if (p.bal<=0) return alert(p.name+' 님은 잔액이 0원이라 '+nm+' 벌금을 낼 수 없어요. 먼저 충전해 주세요');
+  var pv=L.finePreview(g,i,kind);
+  if (!pv.to.length) return alert('벌금을 받을 사람(잔액 있는 다른 사람)이 없어요');
+  snap(); var rec=L.fine(g,i,kind);
+  var warn = pv.capped ? '잔액 부족: '+p.name+' 님은 '+W(pv.full)+'를 내야 하지만 잔액이 '+W(pv.total)+'뿐이라 '+W(pv.total)+'만 냈어요 ('+pv.to.filter(function(x){return x.capped;}).map(function(x){return g.players[x.i].name+' '+W(x.pay);}).join(', ')+'만 받음)' : '';
+  st={fineFlash:rec.id, fineWarn:warn}; render();
+  if (warn) alert(warn);
+}
+function cancelFine(id){
+  if(!L.canUndoFine(g,id)) return alert('받은 사람이 이미 그 돈을 판에서 써서 이 벌금은 취소할 수 없어요');
+  snap(); L.undoFine(g,id); if(view==='main') st={}; render();
+}
+function fineHtml(ro){
+  var fc=L.fineCounts(g), h='<div class="box"><h2>벌금 내역 (욕·영어, 1회 '+W(L.fineAmtOf(g))+'씩)</h2>';
+  g.players.forEach(function(p,i){ var c=fc[i]; h+='<div class="calc"><b>'+esc(p.name)+'</b> 욕 '+c.swear+'회 · 영어 '+c.eng+'회<br><span style="font-size:16px">낸 벌금 '+W(c.paid)+' · 받은 벌금 '+W(c.got)+'</span></div>'; });
+  h+='<h2 style="font-size:21px;margin-top:14px">시간순 내역</h2>';
+  if (!(g.fines||[]).length) h+='<p>아직 벌금 내역이 없어요</p>';
+  (g.fines||[]).forEach(function(f,k){
+    h+='<div class="log finelog">'+(k+1)+'. '+fmtTime(f.t)+' · '+esc(L.fineText(g,f))+
+      (!ro?(L.canUndoFine(g,f.id)?' <button class="b3 small" style="width:auto;margin:0 0 0 6px;padding:6px 10px" onclick="cancelFine('+f.id+')">취소</button>':' <span style="color:#888;font-size:15px">(받은 돈을 이미 써서 취소 불가)</span>'):'')+'</div>';
+  });
+  return h+'</div>';
+}
+function renderFine(){ app.innerHTML=fineHtml(false)+'<button class="b3" onclick="view=\'main\';render()">돌아가기</button>'; }
 function doCharge(i,amt){
   snap(); var rec=L.charge(g,i,undefined,amt); st={flash:rec.id}; render();
 }
@@ -617,7 +700,7 @@ function applyIt(){
 function renderLog(){
   var h='<div class="box"><h2>기록</h2>';
   if(!g.log.length) h+='<p>아직 기록이 없어요</p>';
-  g.log.forEach(function(l){ var c=(l.t==='충전'||l.t==='충전 취소'); h+='<div class="log"'+(c?' style="color:#1d6f65"':'')+'>'+(c?'[충전] ':'')+(l.r?l.r+'판 · ':'')+esc(l.txt)+'</div>'; });
+  g.log.forEach(function(l){ var c=(l.t==='충전'||l.t==='충전 취소'), f=(l.t==='벌금'||l.t==='벌금 취소'); h+='<div class="log"'+(c?' style="color:#1d6f65"':(f?' style="color:#7a2e2e"':''))+'>'+(c?'[충전] ':(f?'[벌금] ':''))+(l.r?l.r+'판 · ':'')+esc(l.txt)+'</div>'; });
   h+='<button class="b3" onclick="view=\'chg\';render()">충전 내역 보기</button><button class="b3" onclick="view=\'main\';render()">돌아가기</button></div>';
   app.innerHTML=h;
 }
@@ -629,6 +712,7 @@ function renderSet(){
    '<p>광값 개당 금액 (원)</p><input type="number" id="sgp" value="'+L.gwangPriceOf(g)+'">'+
    '<p>첫뻑 점수 (점)</p><input type="number" id="spk" value="'+L.ppeokScoreOf(g)+'">'+
    '<p>연뻑 배수 (2연뻑 = 첫뻑 x배수, 3연뻑 = 2연뻑 x배수)</p><input type="number" id="spm" value="'+L.ppeokMultOf(g)+'">'+
+   '<p>벌금 1회 금액 (욕·영어, 받는 사람 1명당 원)</p><input type="number" id="sfa" value="'+L.fineAmtOf(g)+'">'+
    '<p>뻑 값 낼 사람</p><select id="spp" style="font-size:20px;padding:10px;width:100%;border-radius:10px"><option value="seated" '+(L.ppeokPayerMode(g)==='seated'?'selected':'')+'>이번 판에 앉은 전원 (광팔이·죽은 사람 포함)</option><option value="play" '+(L.ppeokPayerMode(g)==='play'?'selected':'')+'>이번 판에 친 사람만</option></select>'+
    '<p>광값 낼 사람 (죽은 사람은 항상 제외)</p><select id="sgw" style="font-size:20px;padding:10px;width:100%;border-radius:10px"><option value="noSeon" '+(L.gwangMode(g)==='noSeon'?'selected':'')+'>선 제외, 두 번째·세 번째 주자만</option><option value="all" '+(L.gwangMode(g)==='all'?'selected':'')+'>선 포함 치는 사람 모두</option></select>'+
    '<button class="b2" onclick="saveSet()">저장</button>'+
@@ -636,7 +720,7 @@ function renderSet(){
    '<button class="b3" onclick="view=\'main\';render()">돌아가기</button></div>';
   app.innerHTML=h;
 }
-function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value; if(!(pks>0)||!(pkm>0)) return alert('뻑 점수·배수를 확인해 주세요'); snap(); g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokPayer=$('spp').value==='play'?'play':'seated'; g.gwangPrice=gp; g.gwangPayer=$('sgw').value==='all'?'all':'noSeon'; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
+function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value; if(!(pks>0)||!(pkm>0)) return alert('뻑 점수·배수를 확인해 주세요'); var fa=+$('sfa').value; if(!(fa>0)) return alert('벌금 금액을 확인해 주세요'); snap(); g.fineAmt=fa; g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokPayer=$('spp').value==='play'?'play':'seated'; g.gwangPrice=gp; g.gwangPayer=$('sgw').value==='all'?'all':'noSeon'; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
 function resetAll(){ if(!confirm('모든 기록을 지우고 새로 시작할까요?')) return; if(!confirm('정말 지울까요? 되돌릴 수 없어요')) return; g=null; prev=null; localStorage.removeItem(KEY); view='main'; render(); }
 
 function renderEnd(){
@@ -685,10 +769,11 @@ function renderRO(){
   var m=$('mult');
   if (g.nextMult>1){ m.textContent='다음 판 x'+g.nextMult; m.classList.remove('hide'); } else m.classList.add('hide');
   var h='<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+' · '+g.round+'판 진행</div></div><div class="grid">';
-  g.players.forEach(function(p){
+  var fc=L.fineCounts(g);
+  g.players.forEach(function(p,i){
     var out=p.bal<=0;
     h+='<div class="card '+(out?'out':'')+'"><div class="nm">'+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
-      '<div class="sub">넣은 돈 '+W(p.invested)+' ('+p.charges+'회)</div>'+(out?'<div class="tag">쉬는 중</div>':'')+'</div>';
+      '<div class="sub">넣은 돈 '+W(p.invested)+' ('+p.charges+'회)</div>'+(out?'<div class="tag">쉬는 중</div>':'')+fineCnt(fc[i])+'</div>';
   });
   h+='</div>';
   var s=L.settle(g);
@@ -696,7 +781,7 @@ function renderRO(){
   s.rows.forEach(function(r){ h+='<div class="calc"><b>'+esc(r.name)+'</b> 손익 <b style="color:'+(r.net>=0?'#2a9d8f':'#c00')+'">'+(r.net>0?'+':'')+W(r.net)+'</b><br><span style="font-size:16px">넣은 돈 '+W(r.invested)+' · 남은 칩 '+W(r.bal)+'</span></div>'; });
   if(!s.transfers.length) h+='<p>보낼 돈이 없어요</p>';
   s.transfers.forEach(function(t){ h+='<div class="calc" style="font-size:22px">'+esc(g.players[t.from].name)+' → '+esc(g.players[t.to].name)+' <b>'+W(t.amt)+'</b></div>'; });
-  h+='</div>'+chgHtml(true)+'<div class="box"><h2>기록</h2>';
+  h+='</div>'+chgHtml(true)+fineHtml(true)+'<div class="box"><h2>기록</h2>';
   if(!g.log.length) h+='<p>아직 기록이 없어요</p>';
   g.log.forEach(function(l){ h+='<div class="log">'+(l.r?l.r+'판 · ':'')+esc(l.txt)+'</div>'; });
   h+='</div><details><summary>보기 전용 안내 (눌러서 보기)</summary><p>이 화면은 진행자가 링크를 만든 순간의 상태예요. 입력은 진행자 폰에서만 하고, 참가자는 보기용 링크로 확인해요. 최신 상태는 진행자가 새로 올린 링크로 확인하세요.</p></details>'+RULES();
