@@ -84,6 +84,21 @@ var L = (function(){
     if (d2!=='die' && d3!=='die') rest[order[3]] = true;
     return {rest: rest, dead: dead, lastRests: d2!=='die' && d3!=='die'};
   }
+  // 단순 순서: 선만 고르면 사람 목록(자리) 순서대로 선 다음부터 두 번째·세 번째·마지막 (잔액 있는 사람만)
+  function seatOrder(g, seon){
+    var act = g.players.map(function(p,i){return i;}).filter(function(i){ return g.players[i].bal>0; });
+    var k = act.indexOf(seon); if (k<0) k = 0;
+    return act.slice(k).concat(act.slice(0,k));
+  }
+  // 선·광팔이만 고르는 방식: 광팔이가 있으면 나머지는 모두 진행(죽은 사람 없음). 광팔이 없음이면 고른 죽은 사람만 빠짐
+  // 4명 이상이고 광팔이 규칙이 켜져 있으면 기본 광팔이 = 마지막 주자 (두 번째·세 번째가 모두 진행한 경우)
+  // gpOn: 광팔이 체크 → 마지막 주자가 광팔이로 쉬고 나머지(2·3번째 포함)는 모두 진행. 체크 안 하면 dead(2·3번째 중 죽은 사람)만 빠짐
+  function simpleSeat(g, seon, gpOn, dead){
+    var order = seatOrder(g, seon), rest = {}, dd = {};
+    if (gpOn && g.gwangpal!==false && order.length>=4) rest[order[order.length-1]] = true;
+    else Object.keys(dead||{}).forEach(function(i){ i=+i; var k = order.indexOf(i); if (dead[i] && (k===1 || k===2)) dd[i] = true; });
+    return {order: order, seon: order[0], rest: rest, dead: dd};
+  }
   function gwangPriceOf(g){ return g.gwangPrice>0 ? g.gwangPrice : 5000; }
   // 광값 낼 사람: 'noSeon'(기본) = 선 제외, 두 번째·세 번째 주자만 / 'all' = 선 포함 치는 사람 모두. 죽은 사람은 항상 제외
   function gwangMode(g){ return g.gwangPayer==='all' ? 'all' : 'noSeon'; }
@@ -271,7 +286,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -300,7 +315,7 @@ function RULES(){
  '<p><b>총통 승</b>: 처음 받은 손패에 같은 월 4장이 있으면 바로 이겨요. 승자만 고르면 정해진 점수(기본 10점, 설정에서 변경) x 점당 금액을 진 사람 전원이 내요. 고·흔들기·폭탄·박·지난 판 무효 배수는 적용하지 않아요. 광팔이·죽음·광값 규칙은 똑같아요.</p>'+
  '<p><b>총통 포기하고 진행</b>: 총통을 들고도 그냥 판을 이어 가면, 그 판은 폭탄으로 쳐서 2배만 적용해요(기본). 설정에서 4배를 고르면 흔들기+폭탄을 합쳐 4배로 계산해요. 이때 흔들기·폭탄 횟수는 따로 넣지 마세요.</p>'+
  '<p><b>무효(나가리·쇼당)</b>: 돈이 오가지 않고, 다음 판 점수가 2배가 돼요 (끌 수 있음).</p>'+
- '<p><b>4명 순서와 광팔이</b>: 선, 두 번째, 세 번째, 마지막 순서로 정해요. 두 번째와 세 번째가 모두 진행하면 마지막 주자가 광팔이로 쉬어요. 두 번째나 세 번째가 포기(죽음)하면 마지막 주자는 광팔이가 아니라 같이 쳐요. 자동으로 정해지고, 직접 고칠 수도 있어요. 5명 이상이면 광팔이를 직접 골라요. 설정에서 광팔이 규칙을 끌 수 있어요.</p>'+
+ '<p><b>선과 광팔이</b>: 판마다 선만 고르면 순서(두 번째, 세 번째, 마지막)는 사람 목록 순서대로 정해져요. 4명이면 "광팔이 있음"이 기본으로 체크돼 있고, 마지막 주자가 광팔이로 쉬어요(두 번째·세 번째는 진행). 체크를 끄면 두 번째·세 번째 중 죽은 사람을 체크해 주세요. 설정에서 광팔이 규칙을 끌 수 있어요.</p>'+
  '<p><b>죽음(포기)</b>: 죽은 사람은 그 판 점수 정산에서 빠져요(내지도 받지도 않음). 광값도 어떤 설정에서든 내지 않아요.</p>'+
  '<p><b>광값</b>: 광팔이가 받은 패에서 광이나 쌍피 개수를 세요. 개수 x 개당 금액(지금 '+W(gp)+')을 광값 낼 사람 각각이 광팔이에게 줘요. 판에서 이기고 지는 것과 상관없어요. 지금 설정: <b>'+esc(who)+'</b> (설정에서 "선 포함 치는 사람 모두"로 바꿀 수 있어요). 예: 2개면 두 번째·세 번째 주자가 한 명당 '+W(gp*2)+'씩. 0개면 광값 없음.</p>'+
  '<p><b>충전</b>: 기본은 모두 0원으로 시작해요. 각자 카드의 +1만원, +5만원, +10만원 버튼 중 하나를 누르면 그 금액이 바로 들어가고 충전 내역에 금액별로 남아요. 잘못 눌렀으면 "방금 충전 취소"나 충전 내역의 취소 버튼으로 되돌려요(판에서 이미 쓴 칩은 취소 불가). 충전한 돈은 모두 딜러 계좌(장부)에 모여요.</p>'+
@@ -339,7 +354,7 @@ function start(){
 function orderNote(){
   var act=actList().length, n=g.players.length;
   if (act<2) return '<p class="note">잔액 있는 사람이 2명 이상이어야 판을 시작할 수 있어요. 각자 카드의 +1만원·+5만원·+10만원 버튼으로 충전해 주세요.</p>';
-  if (g.gwangpal!==false && n>=4 && act<4) return '<p class="note">지금 잔액 있는 사람은 '+act+'명이에요. 0원인 사람은 이번 판에 못 껴요. 4명 모두 충전하면 순서 정하기(광팔이 자동 판정)가 나와요.</p>';
+  if (g.gwangpal!==false && n>=4 && act<4) return '<p class="note">지금 잔액 있는 사람은 '+act+'명이에요. 0원인 사람은 이번 판에 못 껴요. 4명 모두 충전하면 광팔이 체크가 나와요.</p>';
   return '';
 }
 function renderMain(){
@@ -404,68 +419,47 @@ function undo(){
   g=JSON.parse(prev); prev=null; render();
 }
 
-// 1단계: 순서·진행/포기·광팔이·광값 + 이긴 사람
+// 1단계: 선·광팔이만 고르기 (순서는 자리 순서대로 자동) + 광값 + 이긴 사람
 var POS=['선','두 번째','세 번째','마지막'];
 function actList(){ return g.players.map(function(p,i){return i;}).filter(function(i){return g.players[i].bal>0;}); }
-function useOrder(){ return g.gwangpal!==false && actList().length===4; }
+function useGp(){ return g.gwangpal!==false && actList().length>=4; }
 function initS1(){
-  if (st.init) return; st.init=true; st.rest={}; st.dead={}; st.gw={}; st.manual=false;
-  if (useOrder()){
-    var act=actList(), o=(g.order||[]).filter(function(i){return act.indexOf(i)>=0;});
-    if (o.length!==4) o=act.slice();
-    st.order=o; st.d2=st.d2||'go'; st.d3=st.d3||'go'; seatAuto();
-  }
+  if (st.init) return; st.init=true; st.gw={}; st.dd={};
+  var act=actList(), s0=(g.order||[])[0];
+  st.seon = act.indexOf(s0)>=0 ? s0 : act[0];
+  st.gpOn = useGp();
+  seatApply();
 }
-function seatAuto(){ var a=L.autoSeat(st.order, st.d2, st.d3); st.rest=a.rest; st.dead=a.dead; st.manual=false; fixW(); }
+function seatApply(){ var a=L.simpleSeat(g, st.seon, st.gpOn, st.dd); st.order=a.order; st.rest=a.rest; st.dead=a.dead; fixW(); }
 function fixW(){ if (st.w!==undefined && (st.rest[st.w]||st.dead[st.w])) st.w=undefined; }
-function setPos(pos,i){ var o=st.order, k=o.indexOf(i); o[k]=o[pos]; o[pos]=i; seatAuto(); render(); }
-function setDec(k,v){ st[k]=v; seatAuto(); render(); }
-function cycleSt(i){
-  var cur = st.rest[i]?'rest':(st.dead[i]?'dead':'play');
-  var seq = g.gwangpal!==false ? ['play','dead','rest'] : ['play','dead'];
-  var nx = seq[(seq.indexOf(cur)+1)%seq.length];
-  delete st.rest[i]; delete st.dead[i];
-  if (nx==='rest') st.rest[i]=true; if (nx==='dead') st.dead[i]=true;
-  st.manual=true; fixW(); render();
-}
-function seonPick(){
-  if (st.order || L.gwangMode(g)!=='noSeon') return '';
-  var h='<p><b>선은 누구인가요?</b> (선은 광값을 안 내요. 안 고르면 치는 사람 모두 내요)</p><div class="row">';
-  L.roundPlayers(g, st.rest, st.dead).play.forEach(function(i){ h+='<button class="pick small '+(st.seon===i?'on':'')+'" onclick="st.seon=(st.seon==='+i+'?undefined:'+i+');render()">'+esc(g.players[i].name)+'</button>'; });
-  return h+'</div>';
-}
+function pickSeon(i){ st.seon=i; st.dd={}; seatApply(); render(); }
+function setGp(on){ st.gpOn=!!on; st.dd={}; seatApply(); render(); }
+function toggleDead(i){ st.dd[i]=!st.dd[i]; if(!st.dd[i]) delete st.dd[i]; seatApply(); render(); }
 function playing(){ return L.roundPlayers(g, st.rest, st.dead).play; }
 function renderS1(){
   initS1();
-  var rp=L.roundPlayers(g, st.rest, st.dead), h=orderNote();
-  if (useOrder()){
-    h+='<div class="box"><h2>순서 정하기</h2>';
-    POS.forEach(function(nm,pos){
-      h+='<p><b>'+nm+'</b></p><div class="row">';
-      st.order.forEach(function(i){ h+='<button class="pick small '+(st.order[pos]===i?'on':'')+'" onclick="setPos('+pos+','+i+')">'+esc(g.players[i].name)+'</button>'; });
-      h+='</div>';
-    });
-    [['d2','두 번째'],['d3','세 번째']].forEach(function(a,k){
-      h+='<p><b>'+a[1]+' ('+esc(g.players[st.order[k+1]].name)+')</b></p><div class="row">'+
-        '<button class="pick small '+(st[a[0]]!=='die'?'on':'')+'" onclick="setDec(\''+a[0]+'\',\'go\')">진행</button>'+
-        '<button class="pick small '+(st[a[0]]==='die'?'on':'')+'" onclick="setDec(\''+a[0]+'\',\'die\')">포기 (죽음)</button></div>';
-    });
-    var last=g.players[st.order[3]].name, auto=L.autoSeat(st.order, st.d2, st.d3);
-    h+='<p class="calc">자동 판정: 마지막 주자 <b>'+esc(last)+'</b> '+(auto.lastRests?'광팔이로 쉼':'참여 (같이 침)')+(st.manual?'<br><span class="warn">아래에서 직접 고쳤어요</span>':'')+'</p></div>';
+  var rp=L.roundPlayers(g, st.rest, st.dead), h=orderNote(), o=st.order, nm=function(i){return esc(g.players[i].name);};
+  var gpOn=!!Object.keys(st.rest).length, last=o[o.length-1];
+  h+='<div class="box"><h2>판 시작</h2><p><b>1. 선</b></p><div class="row">';
+  actList().forEach(function(i){ h+='<button class="pick small seonbtn '+(st.seon===i?'on':'')+'" onclick="pickSeon('+i+')">'+nm(i)+'</button>'; });
+  h+='</div><p style="font-size:16px;color:#555">순서: '+o.map(nm).join(' → ')+'</p>';
+  if (useGp()){
+    h+='<p><b>2. 광팔이</b></p><label class="ck"><input type="checkbox" id="gpck" '+(gpOn?'checked':'')+' onchange="setGp(this.checked)">광팔이 있음 ('+nm(last)+' 쉼)</label>';
   }
-  h+='<div class="box"><h2>이번 판 상태</h2><p style="font-size:17px">이름을 누르면 참여 → 죽음'+(g.gwangpal!==false?' → 광팔이':'')+' 순서로 바뀌어요.</p>';
-  if (rp.play.length>3) h+='<p class="warn">치는 사람은 3명까지예요. 광팔이나 죽은 사람을 '+(rp.play.length-3)+'명 더 정해 주세요</p>';
+  if (!gpOn){
+    var cand=o.slice(1,3);
+    if (cand.length){
+      h+='<p><b>죽은 사람</b> (없으면 체크 안 함)</p>';
+      cand.forEach(function(i){ h+='<label class="ck"><input type="checkbox" class="deadck" '+(st.dead[i]?'checked':'')+' onchange="toggleDead('+i+')">'+nm(i)+' 죽음</label>'; });
+    }
+  }
+  if (rp.play.length>3) h+='<p class="warn">치는 사람은 3명까지예요. 광팔이를 체크하거나 죽은 사람을 체크해 주세요</p>';
   else if (rp.play.length<2) h+='<p class="warn">치는 사람이 2명 이상이어야 해요</p>';
-  g.players.forEach(function(p,i){
-    if (p.bal<=0) return h+='<button class="pick small" disabled style="opacity:.4">'+esc(p.name)+' (잔액 0원, 쉬는 중)</button>';
-    var t = st.rest[i]?'광팔이':(st.dead[i]?'죽음':'참여');
-    h+='<button class="pick small '+(t==='참여'?'':'on')+'" onclick="cycleSt('+i+')">'+esc(p.name)+': '+t+'</button>';
-  });
   h+='</div>';
   Object.keys(st.rest).forEach(function(i){
     var c=st.gw[i]||0;
     h+='<div class="box"><h2>광값</h2><p><b>'+esc(g.players[i].name)+'(광팔이)가 든 광·쌍피 개수</b> (0이면 광값 없음)</p><div class="stepper"><button class="b3" onclick="st.gw['+i+']=Math.max(0,(st.gw['+i+']||0)-1);render()">-</button><span>'+c+'</span><button class="b3" onclick="st.gw['+i+']=(st.gw['+i+']||0)+1;render()">+</button></div>'+
-      '<p style="font-size:16px;color:#555">개당 '+W(L.gwangPriceOf(g))+' · 낼 사람: '+esc(L.gwangPayerText(g))+'</p>'+seonPick()+'</div>';
+      '<p style="font-size:16px;color:#555">개당 '+W(L.gwangPriceOf(g))+' · 낼 사람: '+esc(L.gwangPayerText(g))+'</p></div>';
   });
   h+='<div class="box"><h2>1단계: 누가 이겼나요?</h2>';
   rp.play.forEach(function(i){ h+='<button class="pick '+(st.w===i?'on':'')+'" onclick="st.w='+i+';render()">'+esc(g.players[i].name)+'</button>'; });
@@ -474,7 +468,7 @@ function renderS1(){
 }
 function checkS1(){
   var rp=L.roundPlayers(g, st.rest, st.dead);
-  if (!rp.ok){ alert(rp.play.length>3 ? '치는 사람은 3명까지예요. 광팔이나 죽은 사람을 정해 주세요' : '치는 사람이 2명 이상이어야 해요'); return null; }
+  if (!rp.ok){ alert(rp.play.length>3 ? '치는 사람은 3명까지예요. 광팔이나 안 치는 사람을 골라 주세요' : '치는 사람이 2명 이상이어야 해요'); return null; }
   if (st.w===undefined || rp.play.indexOf(st.w)<0){ alert('이긴 사람을 골라 주세요'); return null; }
   var losers=rp.play.filter(function(i){return i!==st.w;});
   if (!losers.length){ alert('진 사람이 없어요'); return null; }
@@ -518,7 +512,7 @@ function toS3(){
   if (gb.length>1) return alert('고박은 한 명만 고를 수 있어요');
   view='s3'; render();
 }
-function curSeon(){ return st.order ? st.order[0] : st.seon; }
+function curSeon(){ return st.seon!==undefined ? st.seon : (st.order ? st.order[0] : undefined); }
 function curRes(){
   return L.calcRound(g, st.w, {chongtong:!!st.ct, giveup:!!st.giveup, score:st.score, go:st.go, shake:st.shake, bomb:st.bomb,
     losers:Object.keys(st.lo).map(function(i){ var o=st.lo[i]; return {idx:+i, pi:o.pi, gwang:o.gwang, meong:o.meong, gobak:o.gobak}; }),
