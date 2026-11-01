@@ -45,6 +45,7 @@ label.ck input{width:28px;height:28px}
 .calc b{font-size:24px}
 .warn{color:#c00;font-size:18px}
 .log{font-size:17px;border-bottom:1px solid #ddd;padding:8px 0}
+.numstep{display:flex;align-items:center;gap:8px;margin:4px 0 8px}.numstep button{width:64px;min-width:64px;height:56px;margin:0;padding:0;font-size:28px;font-weight:800;touch-action:manipulation}.numstep input{flex:1;min-width:0;margin:0;text-align:center;font-size:24px;font-weight:800;height:56px;box-sizing:border-box}
 .stepper{display:flex;align-items:center;gap:10px}.stepper button{width:64px;margin:0;padding:10px}.stepper span{font-size:26px;font-weight:800;min-width:40px;text-align:center}
 details{background:#fff;color:#111;border-radius:16px;padding:14px;margin-bottom:12px;font-size:17px;line-height:1.6}
 summary{font-size:21px;font-weight:700}
@@ -1190,6 +1191,14 @@ function toS2(){
   losers.forEach(function(i){ st.lo[i]={pi:false,gwang:false,meong:false,gobak:false}; });
   view='s2'; render();
 }
+// 숫자칸 + -/+ 버튼: 버튼으로 1씩 올리고 내림(최소·최대 지킴), 직접 입력도 그대로 됨(칸을 벗어나면 범위 안으로 맞춤)
+var NUMLIM={score:[1,200], go:[0,10], shake:[0,5], bomb:[0,5]};
+function numClamp(key,v){ var lim=NUMLIM[key]||[0,999]; v=Math.floor(+v); if(!isFinite(v)) v=lim[0]; return Math.max(lim[0], Math.min(lim[1], v)); }
+function numStep(id,key,d){ var el=$(id), v=numClamp(key,(el&&el.value!==''?+el.value:(+st[key]||0))+d); st[key]=v; if(el) el.value=v; }
+function numBox(id,key,label){ var lim=NUMLIM[key]||[0,999], v=(st[key]===undefined||st[key]==='')?'':st[key];
+  return '<p><b>'+label+'</b></p><div class="numstep"><button type="button" class="b3 nsm" aria-label="'+label+' 1 줄이기" onclick="numStep(\''+id+'\',\''+key+'\',-1)">-</button>'+
+    '<input type="number" inputmode="numeric" id="'+id+'" min="'+lim[0]+'" max="'+lim[1]+'" step="1" value="'+v+'" oninput="st.'+key+'=this.value===\'\'?\'\':+this.value" onchange="if(this.value!==\'\'){this.value=numClamp(\''+key+'\',this.value);st.'+key+'=+this.value;}">'+
+    '<button type="button" class="b3 nsp" aria-label="'+label+' 1 늘리기" onclick="numStep(\''+id+'\',\''+key+'\',1)">+</button></div>'; }
 function stepper(key,label,min){
   return '<p><b>'+label+'</b></p><div class="stepper"><button class="b3" onclick="st.'+key+'=Math.max('+min+',st.'+key+'-1);render()">-</button><span>'+st[key]+'</span><button class="b3" onclick="st.'+key+'++;render()">+</button></div>';
 }
@@ -1217,8 +1226,8 @@ function ppeokBox(){
 }
 function renderS2(){
   var h='<div class="box"><h2>2단계: 점수와 옵션</h2><p>'+esc(g.players[st.w].name)+' 님 승</p>'+
-    '<p><b>점수</b> (고 보너스 빼고)</p><input type="number" id="sc" value="'+st.score+'" oninput="st.score=+this.value">'+
-    stepper('go','고 몇 번?',0)+stepper('shake','흔들기 몇 번?',0)+stepper('bomb','폭탄 몇 번?',0)+
+    numBox('sc','score','점수 (고 보너스 빼고)')+
+    numBox('sgo','go','고 몇 번?')+numBox('ssh','shake','흔들기 몇 번?')+numBox('sbo','bomb','폭탄 몇 번?')+
     '<label class="ck"><input type="checkbox" '+(st.giveup?'checked':'')+' onchange="st.giveup=this.checked">총통 포기하고 진행 (x'+L.giveupInfo(g)[0]+', '+L.giveupInfo(g)[1].replace('총통 포기: ','')+')</label></div>'+ppeokBox();
   Object.keys(st.lo).forEach(function(i){
     var o=st.lo[i];
@@ -1234,6 +1243,8 @@ function renderS2(){
 function toS3(){
   st.score=+$('sc').value;
   if (!(st.score>0)) return alert('점수를 넣어 주세요');
+  st.score=numClamp('score',st.score);
+  [['sgo','go'],['ssh','shake'],['sbo','bomb']].forEach(function(a){ var el=$(a[0]); st[a[1]]=numClamp(a[1], el&&el.value!==''?el.value:0); });
   var gb=Object.keys(st.lo).filter(function(i){return st.lo[i].gobak;});
   if (gb.length>1) return alert('고박은 한 명만 고를 수 있어요');
   view='s3'; render();
