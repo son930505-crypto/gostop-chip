@@ -193,7 +193,9 @@ var L = (function(){
   function ppeokPoints(g, level){ level = Math.floor(+level||0); if (level<1||level>3) return 0; return ppeokScoreOf(g) * Math.pow(ppeokMultOf(g), level-1); }
   // 따로(연뻑 아닌) 뻑 횟수: 같은 사람이 같은 판에서 n번째로 한 뻑. 1번째 = 첫뻑 점수(기본 3), 2번째 기본 3점, 3번째(마지막) 기본 5점. 연뻑(2연뻑·3연뻑)은 그대로 6·12점
   var PPEOK_MAX_N = 3;
-  function ppeokNPts(g, n){ n = Math.floor(+n||1); if (n<=1) return ppeokScoreOf(g); if (n===2) return num(g.ppeokN2)>0 ? num(g.ppeokN2) : 3; return num(g.ppeokN3)>0 ? num(g.ppeokN3) : 5; }
+  // 0점도 유효한 값(그 번째 뻑은 돈이 안 오감). 값이 없거나(예전 저장분) 숫자가 아니거나 음수일 때만 기본값
+  function nonNeg(v, def){ if (v===undefined || v===null || v==='') return def; v = +v; return (isFinite(v) && v>=0) ? v : def; }
+  function ppeokNPts(g, n){ n = Math.floor(+n||1); if (n<=1) return ppeokScoreOf(g); if (n===2) return nonNeg(g.ppeokN2, 3); return nonNeg(g.ppeokN3, 5); }
   function ppeokChainPts(g, level, n){ level = Math.floor(+level||0); if (level<1||level>3) return 0; return level===1 ? ppeokNPts(g, n||1) : ppeokPoints(g, level); }
   function ppeokName(level, n){ level = Math.floor(+level||0); return level>1 ? PPEOK_NAMES[level] : ((n||1)>1 ? '뻑' : PPEOK_NAMES[1]); }
   // 이번 판 그 사람의 뻑 묶음들: 앞서 끝난 묶음(g.pkDone[i]) + 지금 묶음(g.pkPick[i]). 묶음 = 한 번의 뻑(연뻑이면 이어진 것까지)
@@ -785,7 +787,7 @@ var L = (function(){
   function cleanState(d){
     if (!d || d.v!==1 || !d.g || !Array.isArray(d.g.players) || !d.g.players.length) throw new Error('잘못된 링크');
     var s=d.g;
-    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokN2:num(s.ppeokN2)>0?num(s.ppeokN2):3, ppeokN3:num(s.ppeokN3)>0?num(s.ppeokN3):5, ppeokPayer:s.ppeokPayer==='seated'?'seated':'play', fineAmt:num(s.fineAmt)>0?num(s.fineAmt):1000, foolAmt:num(s.foolAmt)>0?num(s.foolAmt):5000, lastWin:(typeof s.lastWin==='number'&&s.lastWin>=0&&s.lastWin<s.players.length)?Math.floor(s.lastWin):-1,
+    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokN2:nonNeg(s.ppeokN2,3), ppeokN3:nonNeg(s.ppeokN3,5), ppeokPayer:s.ppeokPayer==='seated'?'seated':'play', fineAmt:num(s.fineAmt)>0?num(s.fineAmt):1000, foolAmt:num(s.foolAmt)>0?num(s.foolAmt):5000, lastWin:(typeof s.lastWin==='number'&&s.lastWin>=0&&s.lastWin<s.players.length)?Math.floor(s.lastWin):-1,
       players: s.players.map(function(p){ return {name:String(p&&p.name||''), bal:num(p&&p.bal), charges:num(p&&p.charges), invested:num(p&&p.invested)}; }),
       chg: (Array.isArray(s.chg)?s.chg:[]).map(function(c){ return {id:num(c&&c.id), t:num(c&&c.t), i:Math.floor(num(c&&c.i)), amt:num(c&&c.amt), after:num(c&&c.after)}; }).filter(function(c){ return c.i>=0 && c.i<s.players.length; }),
       gws: (Array.isArray(s.gws)?s.gws:[]).map(function(r){ return {id:num(r&&r.id), t:num(r&&r.t), r:num(r&&r.r), i:Math.floor(num(r&&r.i)), n:Math.max(1,Math.floor(num(r&&r.n))), each:num(r&&r.each), total:num(r&&r.total),
@@ -1331,8 +1333,8 @@ function renderSet(){
    '<label class="ck"><input type="checkbox" id="sg" '+(g.gwangpal!==false?'checked':'')+'>4명 이상이면 광팔이 고르기 (3명만 침)</label>'+
    '<p>광값 개당 금액 (원)</p><input type="number" id="sgp" value="'+L.gwangPriceOf(g)+'">'+
    '<p>첫뻑 점수 = 1번째 뻑 점수 (점)</p><input type="number" id="spk" value="'+L.ppeokScoreOf(g)+'">'+
-   '<p>따로 한 2번째 뻑 점수 (연뻑 아님, 점)</p><input type="number" id="spn2" value="'+L.ppeokNPts(g,2)+'">'+
-   '<p>따로 한 3번째(마지막) 뻑 점수 (점)</p><input type="number" id="spn3" value="'+L.ppeokNPts(g,3)+'">'+
+   '<p>따로 한 2번째 뻑 점수 (연뻑 아님, 점)</p><input type="number" id="spn2" min="0" value="'+L.ppeokNPts(g,2)+'">'+
+   '<p>따로 한 3번째(마지막) 뻑 점수 (점)</p><input type="number" id="spn3" min="0" value="'+L.ppeokNPts(g,3)+'">'+
    '<p>연뻑 배수 (2연뻑 = 첫뻑 x배수, 3연뻑 = 2연뻑 x배수)</p><input type="number" id="spm" value="'+L.ppeokMultOf(g)+'">'+
    '<p>벌금 1회 금액 (받는 사람 1명당 원)</p><input type="number" id="sfa" value="'+L.fineAmtOf(g)+'">'+
    '<p>멍청이 1회 금액 (받는 사람 1명당 원)</p><input type="number" id="sfo" value="'+L.foolAmtOf(g)+'">'+
@@ -1343,7 +1345,7 @@ function renderSet(){
    '<button class="b3" onclick="view=\'main\';render()">돌아가기</button></div>';
   app.innerHTML=h;
 }
-function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value, pn2=+$('spn2').value, pn3=+$('spn3').value; if(!(pks>0)||!(pkm>0)||!(pn2>0)||!(pn3>0)) return alert('뻑 점수·배수를 확인해 주세요'); var fa=+$('sfa').value; if(!(fa>0)) return alert('벌금 금액을 확인해 주세요'); var fo=+$('sfo').value; if(!(fo>0)) return alert('멍청이 금액을 확인해 주세요'); snap(); g.fineAmt=fa; g.foolAmt=fo; g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokN2=pn2; g.ppeokN3=pn3; g.gwangPrice=gp; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
+function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value, pn2=+$('spn2').value, pn3=+$('spn3').value; if($('spn2').value===''||$('spn3').value==='') return alert('따로 한 2번째·3번째 뻑 점수를 넣어 주세요 (0점도 돼요)'); if(!(pks>0)||!(pkm>0)||!(pn2>=0)||!(pn3>=0)) return alert('뻑 점수·배수를 확인해 주세요 (첫뻑 점수·배수는 1 이상, 2번째·3번째 뻑은 0 이상)'); var fa=+$('sfa').value; if(!(fa>0)) return alert('벌금 금액을 확인해 주세요'); var fo=+$('sfo').value; if(!(fo>0)) return alert('멍청이 금액을 확인해 주세요'); snap(); g.fineAmt=fa; g.foolAmt=fo; g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokN2=pn2; g.ppeokN3=pn3; g.gwangPrice=gp; g.ppp=p; g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
 function resetAll(){ if(!confirm('모든 기록을 지우고 새로 시작할까요?')) return; if(!confirm('정말 지울까요? 되돌릴 수 없어요')) return; g=null; prev=null; localStorage.removeItem(KEY); view='main'; render(); }
 
 function renderEnd(){
