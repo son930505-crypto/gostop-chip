@@ -327,7 +327,7 @@ var L = (function(){
   // 예전 저장분의 욕(swear)·영어(eng) 기록도 그대로 읽고, 모두 '벌금'으로 표시·합산
   var FINE_KINDS = {fine:'벌금', swear:'벌금', eng:'벌금'};
   function fineKind(k){ return (k==='swear'||k==='eng') ? k : 'fine'; }
-  function fineAmtOf(g){ return num(g.fineAmt)>0 ? num(g.fineAmt) : 1000; }
+  function fineAmtOf(g){ return num(g.fineAmt)>0 ? num(g.fineAmt) : 500; }
   // 미리 계산 (반영 안 함). 잔액 한도: 뻑 정산과 같은 방식으로 받는 사람 순서대로 남은 잔액 안에서만 냄
   function finePreview(g, i, kind){
     var each = fineAmtOf(g), bal = g.players[i].bal, to = [];
@@ -401,7 +401,7 @@ var L = (function(){
   }
   // ===== 멍청이: 카드 + 한 번마다 누른 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 멍청이 금액(기본 5,000원)을 즉시 줌 =====
   // 멍청이 잔액이 모자라면 벌금과 같은 방식: 사람 순서대로 남은 잔액만큼만. - 는 그 사람의 가장 최근 1건을 정확히 되돌림(받은 사람이 이미 썼으면 막힘). 판 반영 때 다시 계산 안 함
-  function foolAmtOf(g){ return num(g.foolAmt)>0 ? num(g.foolAmt) : 5000; }
+  function foolAmtOf(g){ return num(g.foolAmt)>0 ? num(g.foolAmt) : 3000; }
   // 카드 횟수와 - 대상은 이번 판(r = g.round+1) 것만 → 판 반영·무효로 다음 판이 되면 0으로 보임(돈·기록은 그대로, 광팔이 +와 같은 방식)
   function foolCur(g, i){ return (g.fools||[]).filter(function(x){ return x.i===i && x.r===g.round+1; }); }
   function foolCount(g, i){ return foolCur(g, i).length; }
@@ -799,7 +799,7 @@ var L = (function(){
   function cleanState(d){
     if (!d || d.v!==1 || !d.g || !Array.isArray(d.g.players) || !d.g.players.length) throw new Error('잘못된 링크');
     var s=d.g;
-    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokN2:nonNeg(s.ppeokN2,3), ppeokN3:nonNeg(s.ppeokN3,5), ppeokPayer:s.ppeokPayer==='seated'?'seated':'play', fineAmt:num(s.fineAmt)>0?num(s.fineAmt):1000, foolAmt:num(s.foolAmt)>0?num(s.foolAmt):5000, lastWin:(typeof s.lastWin==='number'&&s.lastWin>=0&&s.lastWin<s.players.length)?Math.floor(s.lastWin):-1,
+    return { t:num(d.t), g: { limit:num(s.limit), ppp:num(s.ppp), nextMult:num(s.nextMult)||1, round:num(s.round), gwangpal:s.gwangpal!==false, ctScore:num(s.ctScore)||10, giveupMult:s.giveupMult===4?4:2, gwangPrice:num(s.gwangPrice)>0?num(s.gwangPrice):5000, gwangPayer:s.gwangPayer==='all'?'all':'noSeon', ppeokScore:num(s.ppeokScore)>0?num(s.ppeokScore):3, ppeokMult:num(s.ppeokMult)>0?num(s.ppeokMult):2, ppeokN2:nonNeg(s.ppeokN2,3), ppeokN3:nonNeg(s.ppeokN3,5), ppeokPayer:s.ppeokPayer==='seated'?'seated':'play', fineAmt:num(s.fineAmt)>0?num(s.fineAmt):500, foolAmt:num(s.foolAmt)>0?num(s.foolAmt):3000, lastWin:(typeof s.lastWin==='number'&&s.lastWin>=0&&s.lastWin<s.players.length)?Math.floor(s.lastWin):-1,
       players: s.players.map(function(p){ return {name:String(p&&p.name||''), bal:num(p&&p.bal), charges:num(p&&p.charges), invested:num(p&&p.invested)}; }),
       chg: (Array.isArray(s.chg)?s.chg:[]).map(function(c){ return {id:num(c&&c.id), t:num(c&&c.t), i:Math.floor(num(c&&c.i)), amt:num(c&&c.amt), after:num(c&&c.after)}; }).filter(function(c){ return c.i>=0 && c.i<s.players.length; }),
       gws: (Array.isArray(s.gws)?s.gws:[]).map(function(r){ return {id:num(r&&r.id), t:num(r&&r.t), r:num(r&&r.r), i:Math.floor(num(r&&r.i)), n:Math.max(1,Math.floor(num(r&&r.n))), each:num(r&&r.each), total:num(r&&r.total),
