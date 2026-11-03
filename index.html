@@ -683,9 +683,16 @@ var L = (function(){
     return out;
   }
   // 카드·판 끝 화면의 죽음 체크. 바꾸면 이미 정산된 뻑·광값을 자동으로 다시 맞춤(전부 되거나 전부 안 됨)
+  // 한 판에 쉬는 사람(죽음·광팔이)은 (잔액 있는 사람 수 - 3)명까지, 4명이면 한 명. 나머지 3명은 무조건 참여
+  function restFull(g, i){
+    var act = g.players.filter(function(x){ return x.bal>0; }).length; if (act<4) return false;
+    var dp = g.deadPick||{}, n = Object.keys(dp).filter(function(j){ return dp[j] && +j!==i; }).length;
+    return n >= act-3;
+  }
   function setDead(g, i, on, now){
     var p = g.players[i]; if (!p) return {ok:false};
     if (on){
+      if (restFull(g, i)) return {ok:false, msg:'이번 판은 이미 쉬는 사람(죽음·광팔이)이 있어요. 한 판에 쉬는 사람은 한 명이고 나머지 3명은 무조건 참여예요. 먼저 그 체크를 풀어 주세요'};
       if ((g.pkPick||{})[i]) return {ok:false, msg:p.name+' 님은 이번 판 뻑을 먹었어요. 죽은 사람은 뻑을 먹을 수 없으니 뻑을 먼저 -로 되돌려 주세요'};
       if ((g.prevDead||{})[i]) return {ok:false, msg:p.name+' 님은 직전 판에 죽었어요. 연속으로 죽을 수 없어요'};
       if (!deadOk(g)) return {ok:false, msg:'광팔이('+g.players[g.gpPick].name+')가 있으면 나머지는 모두 진행해서 죽은 사람이 없어요'};
@@ -713,6 +720,7 @@ var L = (function(){
       var act = g.players.filter(function(x){ return x.bal>0; }).length;
       if (act<4) return {ok:false, msg:'광팔이는 잔액 있는 사람이 4명 이상일 때만 할 수 있어요'};
       if (p.bal<=0) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 광을 팔 수 없어요. 먼저 충전해 주세요'};
+      if (restFull(g, i)) return {ok:false, msg:'이번 판은 이미 죽은 사람이 있어요. 죽은 사람이 있으면 광팔이는 없어요. 죽음 체크를 먼저 풀어 주세요'};
       if (curSeon(g)===i) return {ok:false, msg:p.name+' 님은 이번 판 선이에요. 선은 광팔이가 될 수 없어요 (선을 바꾸려면 판 끝 화면에서 선을 고르세요)'};
       if ((g.pkPick||{})[i]) return {ok:false, msg:p.name+' 님은 이번 판 뻑을 먹었어요. 광팔이는 치지 않으니 뻑을 먼저 -로 되돌려 주세요'};
       var other = recs.filter(function(r){ return r.i!==i; })[0];
@@ -819,7 +827,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -921,7 +929,7 @@ function renderMain(){
       (out?'':'<div class="finerow pkcard"><span class="flab" style="color:#1d3f8a">뻑</span><button class="pkb pkminus" onclick="pkMarkUI('+i+',-1)">-</button><span class="pkl">'+pkLabel(i)+'</span><button class="pkb pkplus" onclick="pkMarkUI('+i+',1)">+</button></div>'+pkDetail(i))+
       '<div class="finerow foolcard"><span class="flab" style="color:#6a1b9a">멍청이</span><button class="foolb foolminus" onclick="foolStepUI('+i+',-1)">-</button><span class="fn foolon">'+L.foolCount(g,i)+'</span><button class="foolb foolplus" onclick="foolStepUI('+i+',1)">+</button></div>'+
       '<div class="finerow gwcard"><span class="flab" style="color:#8a5a00">광팔이</span><button class="gwb gwminus" onclick="gwStepUI('+i+',-1)">-</button><span class="fn gwn">'+L.gwCount(g,i)+'</span><button class="gwb gwplus" onclick="gwStepUI('+i+',1)">+</button></div>'+
-      (out?'':'<div class="gpcard"><label><input type="checkbox" class="deadcardck" '+((g.deadPick||{})[i]?'checked':'')+(L.deadOk(g)&&!(g.prevDead||{})[i]?'':' disabled title="'+((g.prevDead||{})[i]?'직전 판에 죽어서 이번 판은 죽음 불가':'광팔이가 있으면 나머지는 모두 진행')+'"')+' onchange="toggleDeadCard('+i+')">죽음(쉼)'+(g.gpPick===i?' · 광팔이':'')+'</label></div>')+fineCnt(fc[i])+'</div>';
+      (out?'':'<div class="gpcard"><label><input type="checkbox" class="deadcardck" '+((g.deadPick||{})[i]?'checked':'')+(L.deadOk(g)&&!(g.prevDead||{})[i]&&((g.deadPick||{})[i]||!L.restFull(g,i))?'':' disabled title="'+((g.prevDead||{})[i]?'직전 판에 죽어서 이번 판은 죽음 불가':'이미 쉬는 사람이 있어요 (한 판에 한 명, 나머지 3명은 무조건 참여)')+'"')+' onchange="toggleDeadCard('+i+')">죽음(쉼)'+(g.gpPick===i?' · 광팔이':'')+'</label></div>')+fineCnt(fc[i])+'</div>';
   });
   h+='</div><p class="tapnote">카드 흰 바탕 빈 곳을 눌러도 죽음(쉼)이 켜지고 꺼져요 (버튼은 그대로)</p>'+orderNote()+'<button class="b1 big" onclick="toS1()">판 끝! 점수 넣기</button>'+
    '<div class="row"><button class="b3 small" onclick="doVoid()">무효 (나가리·쇼당)</button><button class="b3 small" onclick="undo()">방금 것 되돌리기</button></div>'+
@@ -1177,7 +1185,7 @@ function renderS1(){
   var cand=o.slice(1).filter(function(i){ return !st.rest[i]; }); // 선·광팔이 빼고 누구나 죽음 가능 (광팔이와 함께 가능)
   if (cand.length){
     h+='<p><b>죽은(쉬는) 사람</b> (카드의 죽음(쉼) 체크와 같아요. 체크하면 광팔이 자동 쉼은 꺼져요)</p>';
-    cand.forEach(function(i){ h+='<label class="ck"><input type="checkbox" class="deadck" '+(st.dead[i]?'checked':'')+((g.prevDead||{})[i]?' disabled':'')+' onchange="toggleDead('+i+')">'+nm(i)+' 죽음'+((g.prevDead||{})[i]?' (직전 판에 죽음: 이번 판 죽음 불가)':'')+'</label>'; });
+    cand.forEach(function(i){ h+='<label class="ck"><input type="checkbox" class="deadck" '+(st.dead[i]?'checked':'')+(((g.prevDead||{})[i]||(!st.dead[i]&&L.restFull(g,i)))?' disabled':'')+' onchange="toggleDead('+i+')">'+nm(i)+' 죽음'+((g.prevDead||{})[i]?' (직전 판에 죽음: 이번 판 죽음 불가)':'')+'</label>'; });
   }
   if (rp.play.length>3) h+='<p class="warn">치는 사람은 3명까지예요. 광팔이를 체크하거나 죽은 사람을 체크해 주세요</p>';
   else if (rp.play.length<2) h+='<p class="warn">치는 사람이 2명 이상이어야 해요</p>';
