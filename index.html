@@ -1005,7 +1005,7 @@ function renderMain(){
     flash='<div class="flash">'+esc(g.players[lc.i].name)+' +'+W(lc.amt)+' 충전 완료 (잔액 '+W(g.players[lc.i].bal)+')'+
       (L.canUndoCharge(g,lc.id)?'<button class="b3 small" onclick="cancelCharge('+lc.id+')">방금 충전 취소</button>':'')+'</div>';
   }
-  var h=dashHtml()+flash+'<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+'</div></div><div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
+  var h=dashHtml()+flash+'<div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
   g.players.forEach(function(p,i){
     var out=p.bal<=0;
     var dOn=(g.deadPick||{})[i]&&!out;
@@ -1025,7 +1025,7 @@ function renderMain(){
    '<div class="row"><button class="b3 small" onclick="view=\'fine\';render()">벌금 내역</button><button class="b3 small" onclick="view=\'pk\';st={};render()">뻑 내역</button></div>'+
    '<div class="row"><button class="b3 small" onclick="view=\'chg\';render()">충전 내역</button><button class="b3 small" onclick="view=\'log\';render()">기록 보기</button><button class="b3 small" onclick="view=\'set\';render()">설정</button></div>'+
    '<button class="b2" onclick="view=\'share\';render()">보기용 링크 만들기 (참가자 공유)</button>'+
-   '<button class="b4" onclick="view=\'end\';render()">끝내고 정산하기</button>'+RULES();
+   '<button class="b4" onclick="view=\'end\';render()">끝내고 정산하기</button>'+'<div class="pool" style="margin-top:12px"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+'</div></div>'+RULES();
   app.innerHTML=h;
 }
 function fineCnt(c){ return '<div class="fcnt">벌금 '+c.n+'회'+(c.paid||c.got?'<br>낸 벌금 '+(c.paid?'-':'')+W(c.paid)+' / 받은 벌금 '+(c.got?'+':'')+W(c.got):'')+'</div>'; }
