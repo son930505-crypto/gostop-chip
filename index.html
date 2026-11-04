@@ -10,6 +10,18 @@ body{margin:0;font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sa
 header{padding:14px 16px;background:#0b2014;display:flex;justify-content:space-between;align-items:center}
 header h1{margin:0;font-size:24px}
 main{padding:12px;max-width:720px;margin:0 auto}
+.dash{position:sticky;top:0;z-index:30;background:#0b2014;margin:0 0 10px;padding:6px 4px 8px;border-radius:0 0 14px 14px;box-shadow:0 4px 10px rgba(0,0,0,.45)}
+.dash .dtop{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;font-size:clamp(12px,min(2.6vw,3vh),20px);color:#f5c542;font-weight:700;margin:0 2px 5px}
+.dash .dgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.dash .dt{background:#fff;color:#111;border-radius:12px;padding:5px 3px;text-align:center;min-width:0;border:3px solid transparent}
+.dash .dt.out{background:#d9d9d9;color:#777}
+.dash .dt.dsd{border-color:#7b3fa0}.dash .dt.dgp{border-color:#e6a100}
+.dash .dn{font-size:clamp(13px,min(3.4vw,3.6vh),22px);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash .db{font-size:clamp(15px,min(4.4vw,5vh),32px);font-weight:800;line-height:1.15;white-space:nowrap}
+.dash .dp{font-size:clamp(11px,min(2.8vw,3vh),18px);font-weight:700;white-space:nowrap}
+.dash .dp.pl{color:#0a7a2f}.dash .dp.mi{color:#c0392b}
+.dash .ds{font-size:clamp(10px,min(2.4vw,2.8vh),16px);color:#555;min-height:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash .tg{display:inline-block;border-radius:8px;padding:0 5px;margin:0 1px;font-weight:800;font-size:clamp(10px,min(2.4vw,2.8vh),16px)}
 .pool{background:#f5c542;color:#222;border-radius:16px;padding:14px;text-align:center;margin-bottom:12px}
 .pool .lab{font-size:18px}.pool .val{font-size:34px;font-weight:800}
 .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
@@ -852,6 +864,26 @@ var KEY='gostop_chip_v2', g=null, prev=null, view='main', st={}, RO=false, roT=0
 function save(){ if (RO) return; localStorage.setItem(KEY, JSON.stringify({g:g, prev:prev})); }
 function load(){ if (RO) return; try{ var d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.g){ g=d.g; prev=d.prev; if(!g.chg) g.chg=[]; } }catch(e){} }
 function snap(){ prev = JSON.stringify(g); }
+function dashHtml(){
+  if (!g||!g.players) return '';
+  var fc={}, seon=-1, lw=-1, el='';
+  try{ fc=L.fineCounts(g,true); }catch(e){} try{ seon=L.curSeon(g); }catch(e){} try{ lw=L.lastWinner(g); }catch(e){}
+  if (g.tierOn===true && g.t0){ var m=Math.max(0,Math.floor((Date.now()-g.t0)/60000)); el=' · 경과 '+Math.floor(m/60)+':'+('0'+(m%60)).slice(-2); }
+  var h='<div class="dash" id="dash"><div class="dtop"><span>'+((g.round||0)+1)+'판 · 점당 '+W(g.ppp)+el+'</span><span>모인 돈 '+W(L.pool(g))+'</span></div><div class="dgrid">';
+  g.players.forEach(function(p,i){
+    var out=p.bal<=0, net=p.bal-p.invested, dd=(g.deadPick||{})[i]&&!out, gp=g.gpPick===i&&!out, tg='';
+    if (lw===i) tg+='<span class="tg" style="background:#ffe08a">👑</span>';
+    if (!out&&seon===i) tg+='<span class="tg" style="background:#7b3fa0;color:#fff">선</span>';
+    if (dd) tg+='<span class="tg" style="background:#555;color:#fff">죽음</span>';
+    if (gp) tg+='<span class="tg" style="background:#e6a100;color:#fff">광팔이</span>';
+    if (out) tg+='<span class="tg" style="background:#c0392b;color:#fff">0원</span>';
+    var f=(fc[i]&&fc[i].n)||0;
+    h+='<div class="dt'+(out?' out':'')+(seon===i&&!out?' dsd':'')+(gp?' dgp':'')+'"><div class="dn">'+esc(p.name)+'</div><div class="db">'+W(p.bal)+'</div>'+
+      '<div class="dp '+(net>=0?'pl':'mi')+'">'+(net>=0?'+':'-')+W(Math.abs(net))+'</div>'+
+      '<div class="ds">'+(tg||'&nbsp;')+'</div><div class="ds">충전 '+p.charges+'회'+(f?' · 벌금 '+f:'')+'</div></div>';
+  });
+  return h+'</div></div>';
+}
 function tierBarHtml(){
   if (!g) return '';
   var ai=L.allIn(g); if (ai.length) return '<b style="color:#c00">'+esc(ai.join(', '))+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요</b>';
@@ -861,7 +893,7 @@ function tierBarHtml(){
   var now=Date.now(), m=Math.floor((now-g.t0)/60000), nx=L.nextTier(g, now), lim=180-m;
   return '경과 '+Math.floor(m/60)+'시간 '+('0'+(m%60)).slice(-2)+'분 · 점당 '+W(L.tierPpp(g, now))+(nx?' · '+nx.left+'분 뒤 '+W(nx.ppp):' (최종 단계)')+(lim>0?' · 3시간까지 '+Math.floor(lim/60)+'시간 '+('0'+(lim%60)).slice(-2)+'분':' · 3시간 경과');
 }
-setInterval(function(){ try{ if(!g||RO||view!=='main') return; if(L.syncPpp(g, Date.now())){ save(); render(); } else { var e=document.getElementById('tierbar'); if(e) e.innerHTML=tierBarHtml(); } }catch(err){} }, 15000);
+setInterval(function(){ try{ if(!g||RO||view!=='main') return; if(L.syncPpp(g, Date.now())){ save(); render(); } else { var e=document.getElementById('tierbar'); if(e) e.innerHTML=tierBarHtml(); var d=document.getElementById('dash'); if(d) d.outerHTML=dashHtml(); } }catch(err){} }, 15000);
 // ===== 지난 정산 기록: 정산 화면을 열거나 초기화하기 전에 폰에 저장 (초기화해도 남음, 최근 50개) =====
 var HKEY='gostop_chip_hist';
 function histGet(){ try{ return JSON.parse(localStorage.getItem(HKEY))||[]; }catch(e){ return []; } }
@@ -973,7 +1005,7 @@ function renderMain(){
     flash='<div class="flash">'+esc(g.players[lc.i].name)+' +'+W(lc.amt)+' 충전 완료 (잔액 '+W(g.players[lc.i].bal)+')'+
       (L.canUndoCharge(g,lc.id)?'<button class="b3 small" onclick="cancelCharge('+lc.id+')">방금 충전 취소</button>':'')+'</div>';
   }
-  var h=flash+'<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+'</div></div><div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
+  var h=dashHtml()+flash+'<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+'</div></div><div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
   g.players.forEach(function(p,i){
     var out=p.bal<=0;
     var dOn=(g.deadPick||{})[i]&&!out;
@@ -1467,7 +1499,7 @@ function renderRO(){
   var bar=$('robar'); bar.textContent='보기 전용 (마지막 갱신 '+fmtTime(roT)+')'; bar.classList.remove('hide');
   var m=$('mult');
   if (g.nextMult>1){ m.textContent='다음 판 x'+g.nextMult; m.classList.remove('hide'); } else m.classList.add('hide');
-  var h='<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+' · '+g.round+'판 진행</div></div><div class="grid">';
+  var h=dashHtml()+'<div class="pool"><div class="lab">모인 돈 (딜러 계좌 총액)</div><div class="val">'+W(L.pool(g))+'</div><div class="lab">점당 '+W(g.ppp)+' · '+g.round+'판 진행</div></div><div class="grid">';
   var fc=L.fineCounts(g,true);
   g.players.forEach(function(p,i){
     var out=p.bal<=0;
