@@ -15,6 +15,7 @@ main{padding:12px;max-width:720px;margin:0 auto}
 .dash .dgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
 .dash .dt{background:#fff;color:#111;border-radius:12px;padding:5px 3px;text-align:center;min-width:0;border:3px solid transparent}
 .dash .dt.out{background:#d9d9d9;color:#777}
+.dash .dt{cursor:pointer}.dash .dst{display:grid;grid-template-columns:1fr 1fr;gap:1px 3px;font-size:clamp(10px,min(2.5vw,2.9vh),17px);font-weight:700;margin:2px 0;color:#222}.dash .dst span{white-space:nowrap;background:#f0f0f0;border-radius:6px;padding:0 2px}.dash .dst b{color:#c0392b}.dash .dt.out .dst{color:#777}
 .dash .dt.dsd{border-color:#7b3fa0}.dash .dt.dgp{border-color:#e6a100}
 .dash .dn{font-size:clamp(13px,min(3.4vw,3.6vh),22px);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash .db{font-size:clamp(15px,min(4.4vw,5vh),32px);font-weight:800;line-height:1.15;white-space:nowrap}
@@ -339,6 +340,11 @@ var L = (function(){
     var old = g.ppp; g.ppp = p;
     g.log.unshift({t:'점당', r:g.round, txt:'점당 금액 자동 변경: '+won(old)+' → '+won(p)+' (첫 충전 후 '+Math.floor((now-g.t0)/60000)+'분 경과)'});
     return true;
+  }
+  // 대시보드용 누적 횟수 (판이 바뀌어도 초기화 안 됨): 벌금·멍청이·광팔이·뻑(반영된 기록 + 이번 판에 입력 중인 뻑)
+  function totalCounts(g, i){
+    var n = function(a){ return (a||[]).filter(function(x){ return x.i===i; }).length; };
+    return {fine:n(g.fines), fool:n(g.fools), gw:n(g.gws), pk:n(g.pks)+pkChains(g,i).length};
   }
   function allIn(g){ return g.players.filter(function(p){ return p.invested>0 && p.bal<=0; }).map(function(p){ return p.name; }); }
   function undoCharge(g, id){
@@ -852,7 +858,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {tiersOf:tiersOf,tierPpp:tierPpp,nextTier:nextTier,syncPpp:syncPpp,allIn:allIn,roundTouched:roundTouched,restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {totalCounts:totalCounts,tiersOf:tiersOf,tierPpp:tierPpp,nextTier:nextTier,syncPpp:syncPpp,allIn:allIn,roundTouched:roundTouched,restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -864,6 +870,12 @@ var KEY='gostop_chip_v2', g=null, prev=null, view='main', st={}, RO=false, roT=0
 function save(){ if (RO) return; localStorage.setItem(KEY, JSON.stringify({g:g, prev:prev})); }
 function load(){ if (RO) return; try{ var d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.g){ g=d.g; prev=d.prev; if(!g.chg) g.chg=[]; } }catch(e){} }
 function snap(){ prev = JSON.stringify(g); }
+function dashTap(i){
+  if (view!=='main') return;
+  var card=document.querySelector('.card[data-i="'+i+'"]'); if (!card || card.classList.contains('out')) return;
+  var ck=card.querySelector('.deadcardck'); if (!ck || ck.disabled) return;
+  toggleDeadCard(i);
+}
 function dashHtml(){
   if (!g||!g.players) return '';
   var fc={}, seon=-1, lw=-1, el='';
@@ -877,10 +889,12 @@ function dashHtml(){
     if (dd) tg+='<span class="tg" style="background:#555;color:#fff">죽음</span>';
     if (gp) tg+='<span class="tg" style="background:#e6a100;color:#fff">광팔이</span>';
     if (out) tg+='<span class="tg" style="background:#c0392b;color:#fff">0원</span>';
-    var f=(fc[i]&&fc[i].n)||0;
-    h+='<div class="dt'+(out?' out':'')+(seon===i&&!out?' dsd':'')+(gp?' dgp':'')+'"><div class="dn">'+esc(p.name)+'</div><div class="db">'+W(p.bal)+'</div>'+
+    var ro=(typeof RO!=='undefined'&&RO), c=L.totalCounts(g,i);
+    h+='<div class="dt'+(out?' out':'')+(seon===i&&!out?' dsd':'')+(gp?' dgp':'')+'"'+(ro?'':' onclick="dashTap('+i+')"')+'><div class="dn">'+esc(p.name)+'</div><div class="db">'+W(p.bal)+'</div>'+
       '<div class="dp '+(net>=0?'pl':'mi')+'">'+(net>=0?'+':'-')+W(Math.abs(net))+'</div>'+
-      '<div class="ds">'+(tg||'&nbsp;')+'</div><div class="ds">충전 '+p.charges+'회'+(f?' · 벌금 '+f:'')+'</div></div>';
+      '<div class="ds">'+(tg||'&nbsp;')+'</div>'+
+      (ro?'':'<div class="dst"><span>벌금 <b>'+c.fine+'</b></span><span>멍청이 <b>'+c.fool+'</b></span><span>광팔이 <b>'+c.gw+'</b></span><span>뻑 <b>'+c.pk+'</b></span></div>')+
+      '<div class="ds">충전 '+p.charges+'회</div></div>';
   });
   return h+'</div></div>';
 }
