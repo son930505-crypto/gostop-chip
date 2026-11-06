@@ -139,6 +139,10 @@ select{font-size:16px;padding:10px;border-radius:10px;background:#0f1a14;color:#
  .srh{font-size:15px}.rl{column-width:auto;font-size:13px;overflow:visible}.rr{white-space:normal}.rr .rn{min-width:40px}
  .hopen{flex-wrap:wrap;font-size:13px;gap:6px 12px;padding:10px}.hdel{font-size:13px;padding:0 12px}
 }
+/* 전체화면 버튼 */
+.tb.fs{background:#1e3329;color:#bfe3cc;border:1px solid #3a5a48}
+.fsbtn{position:fixed;top:10px;right:10px;z-index:5;font-size:15px;padding:8px 12px;background:#1e3329;color:#bfe3cc;border:1px solid #3a5a48}
+.nofs .fsx{display:none!important}
 /* ---------- 모달 ---------- */
 .mask{position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;z-index:10;padding:2vh 2vw}
 .mod{background:#17271e;border:2px solid #f2c14e;border-radius:16px;padding:2vh 1.6vw;width:min(1200px,96vw);max-height:96vh;overflow:auto}
@@ -174,6 +178,7 @@ select{font-size:16px;padding:10px;border-radius:10px;background:#0f1a14;color:#
 
 <!-- ================= 시작 화면 ================= -->
 <div id="start">
+  <button class="fsbtn fsx" onclick="fsToggle()">⛶ 전체화면</button>
   <h1>섯다 도우미</h1>
   <div class="sub">참가자와 게임 종류를 고르면 TV용 대시보드로 넘어갑니다. (칩·금액 계산 없음)</div>
   <div class="sec">
@@ -216,6 +221,7 @@ select{font-size:16px;padding:10px;border-radius:10px;background:#0f1a14;color:#
     <div class="gt" id="gtLabel"></div>
     <div class="rd" id="rdLabel"></div>
     <div class="lastlog" id="log"></div>
+    <button class="tb fs fsx" onclick="fsToggle()">⛶ 전체화면</button>
     <button class="tb re" onclick="openReplay()">재경기</button>
     <button class="tb un" onclick="undo()">↶ 되돌리기</button>
     <button class="tb" onclick="openJudge()">판정기</button>
@@ -612,6 +618,18 @@ function judgeCalc(){
   }
 }
 
+/* ---------- 전체화면 ---------- */
+function fsEl(){return document.fullscreenElement||document.webkitFullscreenElement||null;}
+function fsAvail(){var d=document.documentElement;return !!((d.requestFullscreen||d.webkitRequestFullscreen)&&(document.fullscreenEnabled!==false||document.webkitFullscreenEnabled));}
+function fsLabel(){var on=!!fsEl();[].forEach.call(document.querySelectorAll('.fsx'),function(b){b.textContent=on?'✕ 전체화면 끄기':'⛶ 전체화면';});}
+function fsToggle(){
+  try{
+    if(fsEl()){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
+    else { var d=document.documentElement,f=d.requestFullscreen||d.webkitRequestFullscreen; var p=f.call(d,{navigationUI:'hide'}); if(p&&p.catch) p.catch(function(){}); }
+  }catch(e){}
+}
+document.addEventListener('fullscreenchange',fsLabel);document.addEventListener('webkitfullscreenchange',fsLabel);
+if(!fsAvail()) document.documentElement.classList.add('nofs');
 /* ---------- 시작 ---------- */
 load();
 if(S&&S.players){ showDash(); } else { showStart(false); }
