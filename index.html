@@ -1137,10 +1137,10 @@ function evCards(id){ return '<div class="evcards">'+(EVCARDS[id]||[]).map(funct
 function maybeShowEvent(){ if(RO||!g||!g.evPending||st.ev) return false; if(!(g.ppp===1000||g.ppp===1500)){ delete g.evPending; return false; } st.ev=g.evPending; delete g.evPending; return true; }
 function evHtml(){ if(!st.ev||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(!ev) return '';
   var units=ev.kind==='mult'?(ev.mult||1):(ev.pts||0); var tip=ev.kind==='mult'?('미션 배수 x'+units+' → 각 '+W(Math.floor(units*g.ppp))+'씩'):('+'+units+'점 → 각 '+W(Math.floor(units*g.ppp))+'씩');
-  var h='<div class="evov" id="evov"><div class="evbox"><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<p class="evattr">패 그림: Wikimedia Commons Hwatu (CC BY-SA 4.0)</p><p>'+esc(ev.note)+' → 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>성공한 사람 선택</b></p>';
+  var h='<div class="evov" id="evov"><div class="evbox"><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<button class="b3 evx" onclick="evCancel()">취소 / 미션 실패</button><p>'+esc(ev.note)+' → 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>성공한 사람 선택</b></p>';
   g.players.forEach(function(p,i){ if(p.bal>0) h+='<button class="pick evpick" onclick="evApply('+i+')">'+esc(p.name)+'</button>'; });
-  return h+'<button class="b3 evx" onclick="evCancel()">모두 실패 / 취소</button></div></div>'; }
-function evCancel(){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(ev){ g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+ev.title+' 모두 실패 (적용 안 함)'}); } st.ev=null; render(); }
+  return h+'</div></div>'; }
+function evCancel(){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(ev){ g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+ev.title+' 취소/미션 실패 (적용 안 함)'}); } st.ev=null; render(); }
 function evApply(i){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(!ev) return; snap(); var r=L.eventApply(g,i,ev); st.ev=null; render(); if(r) alert(g.players[i].name+' 님 이벤트 성공! +'+W(r.total)); }
 function cardTap(e,i){
   var t=e&&e.target; if (!t || !t.closest) return;
