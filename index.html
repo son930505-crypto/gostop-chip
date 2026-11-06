@@ -80,10 +80,13 @@ summary{font-size:21px;font-weight:700}
 .evcards{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:flex-end;margin:8px 0}.hcardwrap{display:flex;flex-direction:column;align-items:center;gap:3px}.hcardimg{width:clamp(58px,9vh,110px);height:auto;aspect-ratio:103/168;object-fit:cover;border-radius:8px;border:2px solid #2a1a0a;box-shadow:0 3px 8px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.25);background:#1a1208;display:block}.hcardlab{font-size:clamp(11px,1.8vh,14px);font-weight:800;color:#333}.evattr{font-size:11px;color:#888;margin:4px 0 0}
 .evbox p{font-size:clamp(18px,3.5vh,34px)}.evbox .evpick{font-size:clamp(22px,5vh,48px);padding:1.5vh 3vw;margin:6px;min-width:22vw}.evbox .evx{font-size:clamp(20px,4vh,40px);background:#555;color:#fff;margin-top:2vh}
 .dash .dwin{font-weight:800;color:#7b3fa0}.dash .dwin b{color:#c0392b}
+/* 전체화면 버튼 */
+.fsbtn{width:auto;margin:0;padding:4px 10px;font-size:14px;line-height:1.2;font-weight:700;background:#1e3329;color:#bfe3cc;border:1px solid #3a5a48;border-radius:10px;white-space:nowrap;flex:none;cursor:pointer}
+.nofs .fsx{display:none!important}
 </style>
 </head>
 <body>
-<header><h1>고스톱 칩 관리</h1><span id="mult" class="tag hide"></span></header>
+<header><h1>고스톱 칩 관리</h1><div style="display:flex;align-items:center;gap:8px"><button type="button" class="fsbtn fsx" onclick="fsToggle()">⛶ 전체화면</button><span id="mult" class="tag hide"></span></div></header>
 <div id="robar" class="robar hide"></div>
 <main id="app"></main>
 
@@ -1621,6 +1624,18 @@ function boot(){
     L.decodeState(hs.slice(3)).then(function(d){ g=d.g; roT=d.t; render(); }, roError);
   } else { load(); render(); }
 }
+/* ---------- 전체화면 ---------- */
+function fsEl(){return document.fullscreenElement||document.webkitFullscreenElement||null;}
+function fsAvail(){var d=document.documentElement;return !!((d.requestFullscreen||d.webkitRequestFullscreen)&&(document.fullscreenEnabled!==false||document.webkitFullscreenEnabled));}
+function fsLabel(){var on=!!fsEl();[].forEach.call(document.querySelectorAll('.fsx'),function(b){b.textContent=on?'✕ 전체화면 끄기':'⛶ 전체화면';});}
+function fsToggle(){
+  try{
+    if(fsEl()){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
+    else { var d=document.documentElement,f=d.requestFullscreen||d.webkitRequestFullscreen; var p=f.call(d,{navigationUI:'hide'}); if(p&&p.catch) p.catch(function(){}); }
+  }catch(e){}
+}
+document.addEventListener('fullscreenchange',fsLabel);document.addEventListener('webkitfullscreenchange',fsLabel);
+if(!fsAvail()) document.documentElement.classList.add('nofs');
 window.addEventListener('hashchange', function(){ location.reload(); });
 boot();
 </script>
