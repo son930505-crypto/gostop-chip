@@ -20,7 +20,7 @@ button{font-family:inherit;cursor:pointer;border:0;border-radius:10px}
 .prow input{flex:1;min-width:0;font-size:18px;padding:12px;border-radius:10px;border:1px solid #3a5a48;background:#0f1a14;color:#fff}
 .prow .del{width:52px;background:#5a2a2a;color:#fff;font-size:20px}
 .add{width:100%;padding:12px;background:#24402f;color:#cfe;font-size:16px}
-.types{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.types{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .type{background:#0f1a14;border:2px solid #2f4d3c;border-radius:12px;padding:12px;text-align:left;color:#eef3ee}
 .type b{display:block;font-size:19px;margin-bottom:4px}
 .type span{font-size:13px;color:#9fb7a6;line-height:1.4}
@@ -242,6 +242,7 @@ var TNAME={g:'광',y:'열끗',d:'띠'};
 function card(c){return {m:parseInt(c,10),t:c.replace(/^\d+/,'')};}
 var GAME_TYPES={
   t2kt:{name:'2장 끗/땡',cards:2,tt:true,mid:false,sp:true,desc:'패 2장. 광땡·땡·끗(갑오~망통) + 특수족보(암행어사·땡잡이·구사·멍구사). 알리 등 중간족보는 끗으로 계산.'},
+  t2all:{name:'2장 올족보',cards:2,tt:true,mid:true,sp:true,desc:'패 2장. 광땡·땡·중간족보(알리~세륙)·끗 + 특수족보(암행어사·땡잡이·구사·멍구사) 전부.'},
   t3all:{name:'3장 올족보',cards:3,tt:true,mid:true,sp:true,desc:'패 3장 받아 2장 선택. 광땡·땡·중간족보·끗 + 특수족보(암행어사·땡잡이·구사·멍구사) 전부.'},
   t3kkut:{name:'3장 끗+알리이하',cards:3,tt:false,mid:true,sp:true,desc:'패 3장 받아 2장 선택. 광땡·땡 없음(끗으로 계산). 알리~세륙 + 끗 + 특수족보(구사·멍구사는 상대 알리 이하면 재경기).'}
 };
