@@ -76,9 +76,9 @@ summary{font-size:21px;font-weight:700}
 .flash{background:#2a9d8f;color:#fff;border-radius:14px;padding:12px;margin-bottom:12px;font-size:19px;font-weight:700;text-align:center}
 .note{background:#fff3cd;color:#5a4500;border-radius:12px;padding:10px 12px;font-size:17px;margin:10px 0}
 .linkbox{font-size:15px;word-break:break-all;background:#f2f2f2;border-radius:10px;padding:10px;max-height:120px;overflow:auto}
-.evov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center}.evbox{background:#fff;border-radius:16px;padding:2vh 2vw;width:94vw;height:92vh;overflow:auto;box-sizing:border-box;text-align:center;border:5px solid #e6a100}.evt{font-size:clamp(24px,5vh,48px);color:#c0392b;font-weight:800}.evn{font-size:clamp(36px,10vh,96px);font-weight:900;color:#7b3fa0;margin:8px 0}
+.evov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center}.evbox{position:relative;background:#fff;border-radius:16px;padding:2vh 2vw;width:94vw;height:92vh;overflow:auto;box-sizing:border-box;text-align:center;border:5px solid #e6a100}.evt{font-size:clamp(24px,5vh,48px);color:#c0392b;font-weight:800}.evn{font-size:clamp(36px,10vh,96px);font-weight:900;color:#7b3fa0;margin:8px 0}
 .evcards{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:flex-end;margin:8px 0}.hcardwrap{display:flex;flex-direction:column;align-items:center;gap:3px}.hcardimg{width:clamp(58px,9vh,110px);height:auto;aspect-ratio:103/168;object-fit:cover;border-radius:8px;border:2px solid #2a1a0a;box-shadow:0 3px 8px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.25);background:#1a1208;display:block}.hcardlab{font-size:clamp(11px,1.8vh,14px);font-weight:800;color:#333}.evattr{font-size:11px;color:#888;margin:4px 0 0}
-.evbox p{font-size:clamp(18px,3.5vh,34px)}.evbox .evpick{font-size:clamp(22px,5vh,48px);padding:1.5vh 3vw;margin:6px;min-width:22vw}.evbox .evx{font-size:clamp(20px,4vh,40px);background:#555;color:#fff;margin-top:2vh}
+.evbox p{font-size:clamp(18px,3.5vh,34px)}.evbox .evpick{font-size:clamp(22px,5vh,48px);padding:1.5vh 3vw;margin:6px;min-width:22vw}.evback{position:absolute;top:1vh;left:1vw;width:auto;margin:0;font-size:clamp(16px,3vh,28px);background:#333;color:#fff;padding:.8vh 1.5vw}.evmini{color:#333;background:#fff4d6;border:3px solid #e6a100;border-radius:10px;padding:6px 10px;margin:4px 0;text-align:center;font-size:clamp(15px,2.4vh,22px)}.evmini button{width:auto;display:inline-block;margin:2px 4px;padding:4px 12px;font-size:inherit}.evbox .evx{font-size:clamp(20px,4vh,40px);background:#555;color:#fff;margin-top:2vh}
 .dash .dwin{font-weight:800;color:#7b3fa0}.dash .dwin b{color:#c0392b}
 /* 전체화면 버튼 */
 .fsbtn{width:auto;margin:0;padding:4px 10px;font-size:14px;line-height:1.2;font-weight:700;background:#1e3329;color:#bfe3cc;border:1px solid #3a5a48;border-radius:10px;white-space:nowrap;flex:none;cursor:pointer}
@@ -279,11 +279,11 @@ var L = (function(){
       var formula = sc+' x '+won(g.ppp)+' = '+won(base) + (f.length ? f.map(function(x){return ', x'+x[0]+'('+x[1]+')';}).join('') + ' = '+won(raw) : '');
       return { idx:l.idx, score:gs.score, mult:m, parts:f.map(function(x){return x[1]+' x'+x[0];}), formula:formula, raw: raw };
     });
-    // 고박: 고를 불렀다가 진 사람이 다른 패자 몫까지 모두 낸다
+    // 고박: 고를 불렀다가 진 사람이 다른 패자 몫까지 모두 내고, 그 합계에 무조건 2배
     var gb = opt.losers.filter(function(l){ return l.gobak; });
     if (gb.length===1){
       var total = lines.reduce(function(s,x){return s+x.raw;},0);
-      lines.forEach(function(x){ x.gobakTo = gb[0].idx; x.raw = (x.idx===gb[0].idx) ? total : 0; });
+      lines.forEach(function(x){ x.gobakTo = gb[0].idx; x.raw = (x.idx===gb[0].idx) ? total*2 : 0; });
     }
     lines.forEach(function(x){
       var bal = g.players[x.idx].bal;
@@ -1002,7 +1002,7 @@ function RULES(){
  '<p><b>고</b>: 1고는 +1점, 2고는 +2점을 점수에 먼저 더해요. 3고부터는 점수 그대로 2배씩 (3고 x2, 4고 x4, 5고 x8).</p>'+
  '<p><b>흔들기·폭탄</b>: 한 번마다 2배 (모든 진 사람에게 적용).</p>'+
  '<p><b>피박·광박·멍박</b>: 해당되는 진 사람만 각각 2배. 3명 이상이어도 박은 그 사람에게만 적용해요.</p>'+
- '<p><b>고박</b>: 고를 불렀다가 다른 사람이 이기면, 고 부른 사람이 다른 진 사람 몫까지 혼자 다 내요.</p>'+
+ '<p><b>고박</b>: 고를 불렀다가 다른 사람이 이기면, 고 부른 사람이 다른 진 사람 몫까지 혼자 다 내고, 그 합계를 무조건 2배로 내요.</p>'+
  '<p><b>총통 승</b>: 처음 받은 손패에 같은 월 4장이 있으면 바로 이겨요. 승자만 고르면 정해진 점수(기본 10점, 설정에서 변경) x 점당 금액을 진 사람 전원이 내요. 고·흔들기·폭탄·박·지난 판 무효 배수는 적용하지 않아요. 광팔이·죽음·광값 규칙은 똑같아요.</p>'+
  '<p><b>3연뻑 승</b>: 3연뻑으로 이기면 승자만 고르고 "3연뻑 승" 버튼을 눌러요. 3연뻑 점수('+L.ppeokPoints(g||{},3)+'점) x 점당 금액만 진 사람 전원이 내고, 기본 점수나 다른 배수·박은 없어요.</p>'+
  '<p><b>최종3뻑 승</b>: 첫뻑·연뻑이 아닌 따로 한 3번째 뻑으로 이기면 "최종3뻑 승" 버튼. '+L.ppeokNPts(g||{},3)+'점 x 점당 금액만 진 사람 전원이 내요 (기본 3점·박·배수 없음).</p>'+
@@ -1140,11 +1140,12 @@ function evCards(id){ return '<div class="evcards">'+(EVCARDS[id]||[]).map(funct
 function maybeShowEvent(){ if(RO||!g||!g.evPending||st.ev) return false; st.ev=g.evPending; delete g.evPending; return true; }
 function evHtml(){ if(!st.ev||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(!ev) return '';
   var units=ev.kind==='mult'?(ev.mult||1):(ev.pts||0); var tip=ev.kind==='mult'?('미션 배수 x'+units+' → 각 '+W(Math.floor(units*g.ppp))+'씩'):('+'+units+'점 → 각 '+W(Math.floor(units*g.ppp))+'씩');
-  var h='<div class="evov" id="evov"><div class="evbox"><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<button class="b3 evx" onclick="evCancel()">취소 / 미션 실패</button><p>'+esc(ev.note)+' → 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>성공한 사람 선택</b></p>';
+  if(st.evMin) return '<div class="evmini" id="evmini">🎉 이벤트 진행 중: <b>'+esc(ev.title)+'</b> <button class="small" onclick="st.evMin=false;render()">크게 보기</button> <button class="small" onclick="evCancel()">취소 / 미션 실패</button></div>';
+  var h='<div class="evov" id="evov"><div class="evbox"><button class="evback" onclick="st.evMin=true;render()">⬅ 뒤로 (작게)</button><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<button class="b3 evx" onclick="evCancel()">취소 / 미션 실패</button><p>'+esc(ev.note)+' → 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>성공한 사람 선택</b></p>';
   g.players.forEach(function(p,i){ if(p.bal>0) h+='<button class="pick evpick" onclick="evApply('+i+')">'+esc(p.name)+'</button>'; });
   return h+'</div></div>'; }
-function evCancel(){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(ev){ g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+ev.title+' 취소/미션 실패 (적용 안 함)'}); } st.ev=null; render(); }
-function evApply(i){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(!ev) return; snap(); var r=L.eventApply(g,i,ev); st.ev=null; render(); if(r) alert(g.players[i].name+' 님 이벤트 성공! +'+W(r.total)); }
+function evCancel(){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(ev){ g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+ev.title+' 취소/미션 실패 (적용 안 함)'}); } st.ev=null; st.evMin=false; render(); }
+function evApply(i){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(!ev) return; snap(); var r=L.eventApply(g,i,ev); st.ev=null; st.evMin=false; render(); if(r) alert(g.players[i].name+' 님 이벤트 성공! +'+W(r.total)); }
 function cardTap(e,i){
   var t=e&&e.target; if (!t || !t.closest) return;
   if (t.closest('button,input,label,a,select,textarea,[onclick]:not(.card),.pkdet')) return;
@@ -1475,7 +1476,7 @@ function renderS3(){
   r.lines.forEach(function(x){
     var nm=esc(g.players[x.idx].name);
     if (x.gobakTo!==undefined && x.idx!==x.gobakTo){ h+='<div class="calc">'+nm+': 고박이라 안 냄 = <b>0원</b></div>'; return; }
-    var formula = x.gobakTo!==undefined ? '고박, 모든 진 사람 몫 합계 = <b>'+W(x.raw)+'</b>' : esc(x.formula).replace(/= ([^=]*)$/,'= <b>$1</b>');
+    var formula = x.gobakTo!==undefined ? '고박, 모든 진 사람 몫 합계 '+W(x.raw/2)+' x2(고박) = <b>'+W(x.raw)+'</b>' : esc(x.formula).replace(/= ([^=]*)$/,'= <b>$1</b>');
     h+='<div class="calc">'+nm+': '+formula+
       (x.capped?'<br><span class="warn">잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>';
   });
