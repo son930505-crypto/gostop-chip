@@ -1140,6 +1140,8 @@ var EVCARDS={godori:[['feb_tane',2,'열'],['apr_tane',4,'열'],['aug_tane',8,'�
 function evCards(id){ return '<div class="evcards">'+(EVCARDS[id]||[]).map(function(c){ var src=HWATU[c[0]]||''; var lab=(c[1]?c[1]+'월 ':'')+c[2];
   return '<div class="hcardwrap"><img class="hcardimg" src="'+src+'" alt="'+lab+'" loading="lazy"><div class="hcardlab">'+lab+'</div></div>'; }).join('')+'</div>'; }
 // 대기 중인 이벤트: 판 반영 때 g.evPending에만 넣고, 다음 판에서 죽음·광팔이를 켠 뒤에만 팝업(g.evNow)
+// 10판마다 4~6판 이벤트(개수·판 모두 랜덤)(어느 판인지는 랜덤): g.evBag에서 하나씩 꺼냄
+function evDraw(){ if(typeof window.EV_P==='number') return Math.random()<window.EV_P; if(!g.evBag||!g.evBag.length){ var n=4+Math.floor(Math.random()*3), b=[]; for(var k=0;k<10;k++) b.push(k<n?1:0); for(var i=b.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=b[i];b[i]=b[j];b[j]=t;} g.evBag=b; } return !!g.evBag.shift(); }
 function maybeShowEvent(){ if(RO||!g||!g.evPending||g.evNow) return false; g.evNow=g.evPending; delete g.evPending; return true; }
 function evHtml(){ if(!g.evNow||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
   var units=ev.kind==='mult'?(ev.mult||1):(ev.pts||0); var tip=ev.kind==='mult'?('미션 배수 x'+units+' → 각 '+W(Math.floor(units*g.ppp))+'씩'):('+'+units+'점 → 각 '+W(Math.floor(units*g.ppp))+'씩');
@@ -1526,7 +1528,7 @@ function applyIt(){
   var evMsg='';
   if (evq){ if (evw>=0){ var er=L.eventApply(g, evw, evq); if(er) evMsg=g.players[evw].name+' 님 이벤트 성공! +'+W(er.total); } else g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+evq.title+' 미션 실패 (적용 안 함)'}); g.evNow=null; g.evMin=false; }
   st={}; view='main'; delete g.evPending; // 판 반영 직후엔 팝업 안 띄움. 다음 판 죽음·광팔이 체크 후 maybeShowEvent
-  var ai=L.allIn(g); if (!ai.length && !RO && Math.random()<(typeof window.EV_P==='number'?window.EV_P:0.4)) g.evPending=L.EVENTS[Math.floor(Math.random()*L.EVENTS.length)].id; if (ai.length){ render(); if(evMsg) alert(evMsg); alert(ai.join(', ')+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요'); view='end'; } render(); if(evMsg&&!ai.length) alert(evMsg);
+  var ai=L.allIn(g); if (!ai.length && !RO && evDraw()) g.evPending=L.EVENTS[Math.floor(Math.random()*L.EVENTS.length)].id; if (ai.length){ render(); if(evMsg) alert(evMsg); alert(ai.join(', ')+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요'); view='end'; } render(); if(evMsg&&!ai.length) alert(evMsg);
 }
 
 function renderLog(){
