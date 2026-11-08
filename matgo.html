@@ -1138,8 +1138,7 @@ function maybeShowEvent(){ if(RO||!g||!g.evPending||g.evNow) return false; g.evN
 function evHtml(){ if(!g.evNow||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
   var units=ev.kind==='mult'?(ev.mult||1):(ev.pts||0); var tip=ev.kind==='mult'?('미션 배수 x'+units+' → 각 '+W(Math.floor(units*g.ppp))+'씩'):('+'+units+'점 → 각 '+W(Math.floor(units*g.ppp))+'씩');
   if(g.evMin) return '';
-  var h='<div class="evov" id="evov"><div class="evbox"><button class="evback" onclick="g.evMin=true;render()">⬅ 뒤로 (작게)</button><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<button class="b3 evx" onclick="evCancel()">취소 / 미션 실패</button><p>'+esc(ev.note)+' → 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>성공한 사람 선택</b></p>';
-  g.players.forEach(function(p,i){ if(p.bal>0) h+='<button class="pick evpick" onclick="evApply('+i+')">'+esc(p.name)+'</button>'; });
+  var h='<div class="evov" id="evov"><div class="evbox"><button class="evback" onclick="g.evMin=true;render()">⬅ 뒤로 (작게)</button><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<button class="b3 evx" onclick="evCancel()">취소 / 미션 실패</button><p>'+esc(ev.note)+' → 성공하면 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>판이 끝나면 결과 화면에서 성공한 사람을 골라요. 그때 판이랑 같이 정산돼요.</b></p><button class="pick evpick" onclick="g.evMin=true;render()">확인 (작게 두기)</button>';
   return h+'</div></div>'; }
 function evCancel(){ var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(ev){ g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+ev.title+' 취소/미션 실패 (적용 안 함)'}); } g.evNow=null; g.evMin=false; render(); }
 function evApply(i){ var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return; snap(); var r=L.eventApply(g,i,ev); g.evNow=null; g.evMin=false; render(); if(r) alert(g.players[i].name+' 님 이벤트 성공! +'+W(r.total)); }
