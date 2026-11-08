@@ -78,7 +78,7 @@ summary{font-size:21px;font-weight:700}
 .linkbox{font-size:15px;word-break:break-all;background:#f2f2f2;border-radius:10px;padding:10px;max-height:120px;overflow:auto}
 .evov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center}.evbox{position:relative;background:#fff;border-radius:16px;padding:2vh 2vw;width:94vw;height:92vh;overflow:auto;box-sizing:border-box;text-align:center;border:5px solid #e6a100}.evt{font-size:clamp(24px,5vh,48px);color:#c0392b;font-weight:800}.evn{font-size:clamp(36px,10vh,96px);font-weight:900;color:#7b3fa0;margin:8px 0}
 .evcards{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:flex-end;margin:8px 0}.hcardwrap{display:flex;flex-direction:column;align-items:center;gap:3px}.hcardimg{width:clamp(58px,9vh,110px);height:auto;aspect-ratio:103/168;object-fit:cover;border-radius:8px;border:2px solid #2a1a0a;box-shadow:0 3px 8px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.25);background:#1a1208;display:block}.hcardlab{font-size:clamp(11px,1.8vh,14px);font-weight:800;color:#333}.evattr{font-size:11px;color:#888;margin:4px 0 0}
-.evbox p{font-size:clamp(18px,3.5vh,34px)}.evbox .evpick{font-size:clamp(22px,5vh,48px);padding:1.5vh 3vw;margin:6px;min-width:22vw}.evback{position:absolute;top:1vh;left:1vw;width:auto;margin:0;font-size:clamp(16px,3vh,28px);background:#333;color:#fff;padding:.8vh 1.5vw}.evmini{color:#333;background:#fff4d6;border:3px solid #e6a100;border-radius:10px;padding:6px 10px;margin:4px 0;text-align:center;font-size:clamp(15px,2.4vh,22px)}.evmini button{width:auto;display:inline-block;margin:2px 4px;padding:4px 12px;font-size:inherit}.evbox .evx{font-size:clamp(20px,4vh,40px);background:#555;color:#fff;margin-top:2vh}
+.evbox p{font-size:clamp(18px,3.5vh,34px)}.evbox .evpick{font-size:clamp(22px,5vh,48px);padding:1.5vh 3vw;margin:6px;min-width:22vw}.evback{position:absolute;top:1vh;left:1vw;width:auto;margin:0;font-size:clamp(16px,3vh,28px);background:#333;color:#fff;padding:.8vh 1.5vw}.evmini{color:#333;background:#fff4d6;border:3px solid #e6a100;border-radius:10px;padding:6px 10px;margin:6px 2px 0;text-align:center;font-size:clamp(15px,2.4vh,22px);cursor:pointer}.evmini .evopen{display:inline-block;background:#7b3fa0;color:#fff;border-radius:8px;padding:2px 10px;margin-left:6px;font-weight:700}.evmini .evsub{font-size:.75em;color:#7a5a00;margin-top:2px}.evmini button{width:auto;display:inline-block;margin:2px 4px;padding:4px 12px;font-size:inherit}.evbox .evx{font-size:clamp(20px,4vh,40px);background:#555;color:#fff;margin-top:2vh}
 .dash .dwin{font-weight:800;color:#7b3fa0}.dash .dwin b{color:#c0392b}
 /* 전체화면 버튼 */
 .fsbtn{width:auto;margin:0;padding:4px 10px;font-size:14px;line-height:1.2;font-weight:700;background:#1e3329;color:#bfe3cc;border:1px solid #3a5a48;border-radius:10px;white-space:nowrap;flex:none;cursor:pointer}
@@ -946,8 +946,11 @@ function dashHtml(){
       (ro?'':'<div class="dst"><span>벌금 <b>'+c.fine+'</b></span><span>멍청이 <b>'+c.fool+'</b></span><span>광팔이 <b>'+c.gw+'</b></span><span>뻑 <b>'+c.pk+'</b></span></div>')+
       '<div class="ds"><span class="dwin">승 <b>'+c.win+'</b></span> · 충전 '+p.charges+'회</div></div>';
   });
-  return h+'</div></div>';
+  return h+'</div>'+evDockHtml()+'</div>';
 }
+// 접은 이벤트: 대시보드(상단 고정) 아랫줄에 고정 표시, 누르면 전체 팝업 다시
+function evDockHtml(){ if(!g||!g.evNow||!g.evMin||(typeof RO!=='undefined'&&RO)) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
+  return '<div class="evmini" id="evmini" onclick="event.stopPropagation();g.evMin=false;render()">🎉 이벤트 진행 중: <b>'+esc(ev.title)+'</b> <span class="evopen">눌러서 크게 보기</span><div class="evsub">판 끝 「결과 확인」에서 성공한 사람을 골라 같이 정산돼요</div></div>'; }
 function tierBarHtml(){
   if (!g) return '';
   var ai=L.allIn(g); if (ai.length) return '<b style="color:#c00">'+esc(ai.join(', '))+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요</b>';
@@ -1140,7 +1143,7 @@ function evCards(id){ return '<div class="evcards">'+(EVCARDS[id]||[]).map(funct
 function maybeShowEvent(){ if(RO||!g||!g.evPending||g.evNow) return false; g.evNow=g.evPending; delete g.evPending; return true; }
 function evHtml(){ if(!g.evNow||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
   var units=ev.kind==='mult'?(ev.mult||1):(ev.pts||0); var tip=ev.kind==='mult'?('미션 배수 x'+units+' → 각 '+W(Math.floor(units*g.ppp))+'씩'):('+'+units+'점 → 각 '+W(Math.floor(units*g.ppp))+'씩');
-  if(g.evMin) return '<div class="evmini" id="evmini">🎉 이벤트 진행 중: <b>'+esc(ev.title)+'</b> <button class="small" onclick="g.evMin=false;render()">크게 보기</button> <button class="small" onclick="evCancel()">취소 / 미션 실패</button></div>';
+  if(g.evMin) return '';
   var h='<div class="evov" id="evov"><div class="evbox"><button class="evback" onclick="g.evMin=true;render()">⬅ 뒤로 (작게)</button><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<button class="b3 evx" onclick="evCancel()">취소 / 미션 실패</button><p>'+esc(ev.note)+' → 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>성공한 사람 선택</b></p>';
   g.players.forEach(function(p,i){ if(p.bal>0) h+='<button class="pick evpick" onclick="evApply('+i+')">'+esc(p.name)+'</button>'; });
   return h+'</div></div>'; }
@@ -1502,17 +1505,28 @@ function renderS3(){
   }
   var bef=0, aft=0; g.players.forEach(function(p){bef+=p.bal;}); var tmp=JSON.parse(JSON.stringify(g)); L.applyRound(tmp, r); tmp.players.forEach(function(p){aft+=p.bal;});
   h+='<p style="font-size:16px;color:#2a9d8f">딜러 계좌 확인: 반영 전 칩 합계 '+W(bef)+' = 반영 후 '+W(aft)+(bef===aft?' (일치)':' (불일치)')+'</p>';
+  var evq=g.evNow&&L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0];
+  if (evq){ var eu=evq.kind==='mult'?(evq.mult||1):(evq.pts||0);
+    h+='<h2 style="margin-top:14px">🎉 이벤트: '+esc(evq.title)+'</h2><p class="calc">성공한 사람은 잔액 있는 다른 사람 각자에게서 '+W(Math.floor(eu*g.ppp))+'씩 받아요. 판 반영 때 같이 정산돼요.</p><div>';
+    g.players.forEach(function(p,i){ if(p.bal>0) h+='<button class="pick small'+(st.evWin===i?' on':'')+'" onclick="st.evWin='+i+';render()">'+esc(p.name)+' 성공</button>'; });
+    h+='<button class="pick small'+(st.evWin===-1?' on':'')+'" onclick="st.evWin=-1;render()">아무도 못 함 (실패)</button></div>';
+  }
   h+='<button class="b1" onclick="applyIt()">이대로 반영</button><button class="b3" onclick="view=st.ct?\'s1\':\'s2\';render()">뒤로 (고치기)</button></div>';
   app.innerHTML=h;
 }
 function applyIt(){
+  var evq=g.evNow&&L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0];
+  if (evq && st.evWin===undefined) return alert('이벤트 '+evq.title+': 성공한 사람이나 「아무도 못 함」을 골라 주세요');
+  var evw=st.evWin;
   var r=curRes(); snap();
   var rn=Object.keys(st.rest||{}).map(function(i){return g.players[i].name;});
   var dn=Object.keys(st.dead||{}).map(function(i){return g.players[i].name;});
   if (st.order) g.order=st.order.slice();
   L.applyRound(g, r, L.roundNote(g, r, {score:st.score, go:st.go, giveup:!st.ct&&st.giveup, restNames:rn, deadNames:dn}));
+  var evMsg='';
+  if (evq){ if (evw>=0){ var er=L.eventApply(g, evw, evq); if(er) evMsg=g.players[evw].name+' 님 이벤트 성공! +'+W(er.total); } else g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+evq.title+' 미션 실패 (적용 안 함)'}); g.evNow=null; g.evMin=false; }
   st={}; view='main'; delete g.evPending; // 판 반영 직후엔 팝업 안 띄움. 다음 판 죽음·광팔이 체크 후 maybeShowEvent
-  var ai=L.allIn(g); if (!ai.length && !RO && Math.random()<(typeof window.EV_P==='number'?window.EV_P:0.4)) g.evPending=L.EVENTS[Math.floor(Math.random()*L.EVENTS.length)].id; if (ai.length){ render(); alert(ai.join(', ')+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요'); view='end'; } render();
+  var ai=L.allIn(g); if (!ai.length && !RO && Math.random()<(typeof window.EV_P==='number'?window.EV_P:0.4)) g.evPending=L.EVENTS[Math.floor(Math.random()*L.EVENTS.length)].id; if (ai.length){ render(); if(evMsg) alert(evMsg); alert(ai.join(', ')+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요'); view='end'; } render(); if(evMsg&&!ai.length) alert(evMsg);
 }
 
 function renderLog(){
