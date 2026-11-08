@@ -1136,16 +1136,16 @@ var EVCARDS={godori:[['feb_tane',2,'열'],['apr_tane',4,'열'],['aug_tane',8,'�
  go1:[['jul_tane',7,'1고'],['jun_tane',6,'1고']],go2:[['jul_tane',7,'2고'],['jun_tane',6,'2고'],['may_tane',5,'2고']]};
 function evCards(id){ return '<div class="evcards">'+(EVCARDS[id]||[]).map(function(c){ var src=HWATU[c[0]]||''; var lab=(c[1]?c[1]+'월 ':'')+c[2];
   return '<div class="hcardwrap"><img class="hcardimg" src="'+src+'" alt="'+lab+'" loading="lazy"><div class="hcardlab">'+lab+'</div></div>'; }).join('')+'</div>'; }
-// 대기 중인 이벤트: 판 반영 때 g.evPending에만 넣고, 다음 판에서 죽음·광팔이를 켠 뒤에만 팝업(st.ev)
-function maybeShowEvent(){ if(RO||!g||!g.evPending||st.ev) return false; st.ev=g.evPending; delete g.evPending; return true; }
-function evHtml(){ if(!st.ev||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(!ev) return '';
+// 대기 중인 이벤트: 판 반영 때 g.evPending에만 넣고, 다음 판에서 죽음·광팔이를 켠 뒤에만 팝업(g.evNow)
+function maybeShowEvent(){ if(RO||!g||!g.evPending||g.evNow) return false; g.evNow=g.evPending; delete g.evPending; return true; }
+function evHtml(){ if(!g.evNow||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
   var units=ev.kind==='mult'?(ev.mult||1):(ev.pts||0); var tip=ev.kind==='mult'?('미션 배수 x'+units+' → 각 '+W(Math.floor(units*g.ppp))+'씩'):('+'+units+'점 → 각 '+W(Math.floor(units*g.ppp))+'씩');
-  if(st.evMin) return '<div class="evmini" id="evmini">🎉 이벤트 진행 중: <b>'+esc(ev.title)+'</b> <button class="small" onclick="st.evMin=false;render()">크게 보기</button> <button class="small" onclick="evCancel()">취소 / 미션 실패</button></div>';
-  var h='<div class="evov" id="evov"><div class="evbox"><button class="evback" onclick="st.evMin=true;render()">⬅ 뒤로 (작게)</button><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<button class="b3 evx" onclick="evCancel()">취소 / 미션 실패</button><p>'+esc(ev.note)+' → 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>성공한 사람 선택</b></p>';
+  if(g.evMin) return '<div class="evmini" id="evmini">🎉 이벤트 진행 중: <b>'+esc(ev.title)+'</b> <button class="small" onclick="g.evMin=false;render()">크게 보기</button> <button class="small" onclick="evCancel()">취소 / 미션 실패</button></div>';
+  var h='<div class="evov" id="evov"><div class="evbox"><button class="evback" onclick="g.evMin=true;render()">⬅ 뒤로 (작게)</button><div class="evt">🎉 이벤트 발동! 🎉</div><div class="evn">'+esc(ev.title)+'</div>'+evCards(ev.id)+'<button class="b3 evx" onclick="evCancel()">취소 / 미션 실패</button><p>'+esc(ev.note)+' → 잔액 있는 다른 사람 각자에게서 '+tip+' 받아요</p><p><b>성공한 사람 선택</b></p>';
   g.players.forEach(function(p,i){ if(p.bal>0) h+='<button class="pick evpick" onclick="evApply('+i+')">'+esc(p.name)+'</button>'; });
   return h+'</div></div>'; }
-function evCancel(){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(ev){ g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+ev.title+' 취소/미션 실패 (적용 안 함)'}); } st.ev=null; st.evMin=false; render(); }
-function evApply(i){ var ev=L.EVENTS.filter(function(e){ return e.id===st.ev; })[0]; if(!ev) return; snap(); var r=L.eventApply(g,i,ev); st.ev=null; st.evMin=false; render(); if(r) alert(g.players[i].name+' 님 이벤트 성공! +'+W(r.total)); }
+function evCancel(){ var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(ev){ g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+ev.title+' 취소/미션 실패 (적용 안 함)'}); } g.evNow=null; g.evMin=false; render(); }
+function evApply(i){ var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return; snap(); var r=L.eventApply(g,i,ev); g.evNow=null; g.evMin=false; render(); if(r) alert(g.players[i].name+' 님 이벤트 성공! +'+W(r.total)); }
 function cardTap(e,i){
   var t=e&&e.target; if (!t || !t.closest) return;
   if (t.closest('button,input,label,a,select,textarea,[onclick]:not(.card),.pkdet')) return;
