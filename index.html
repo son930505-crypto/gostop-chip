@@ -78,6 +78,7 @@ summary{font-size:21px;font-weight:700}
 .linkbox{font-size:15px;word-break:break-all;background:#f2f2f2;border-radius:10px;padding:10px;max-height:120px;overflow:auto}
 .evov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;display:flex;align-items:center;justify-content:center}.evbox{position:relative;background:#fff;border-radius:16px;padding:2vh 2vw;width:94vw;height:92vh;overflow:auto;box-sizing:border-box;text-align:center;border:5px solid #e6a100}.evt{font-size:clamp(24px,5vh,48px);color:#c0392b;font-weight:800}.evn{font-size:clamp(36px,10vh,96px);font-weight:900;color:#7b3fa0;margin:8px 0}
 .evcards{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:flex-end;margin:8px 0}.hcardwrap{display:flex;flex-direction:column;align-items:center;gap:3px}.hcardimg{width:clamp(58px,9vh,110px);height:auto;aspect-ratio:103/168;object-fit:cover;border-radius:8px;border:2px solid #2a1a0a;box-shadow:0 3px 8px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.25);background:#1a1208;display:block}.hcardlab{font-size:clamp(11px,1.8vh,14px);font-weight:800;color:#333}.evattr{font-size:11px;color:#888;margin:4px 0 0}
+.evmini .evcards{margin:4px 0;gap:5px}.evmini .hcardimg{width:clamp(34px,6vh,60px);border-width:1px;border-radius:5px}.evmini .hcardlab{font-size:clamp(10px,1.5vh,12px)}
 .evbox p{font-size:clamp(18px,3.5vh,34px)}.evbox .evpick{font-size:clamp(22px,5vh,48px);padding:1.5vh 3vw;margin:6px;min-width:22vw}.evback{position:absolute;top:1vh;left:1vw;width:auto;margin:0;font-size:clamp(16px,3vh,28px);background:#333;color:#fff;padding:.8vh 1.5vw}.evmini{color:#333;background:#fff4d6;border:3px solid #e6a100;border-radius:10px;padding:6px 10px;margin:6px 2px 0;text-align:center;font-size:clamp(15px,2.4vh,22px);cursor:pointer}.evmini .evopen{display:inline-block;background:#7b3fa0;color:#fff;border-radius:8px;padding:2px 10px;margin-left:6px;font-weight:700}.evmini .evsub{font-size:.75em;color:#7a5a00;margin-top:2px}.evmini button{width:auto;display:inline-block;margin:2px 4px;padding:4px 12px;font-size:inherit}.evbox .evx{font-size:clamp(20px,4vh,40px);background:#555;color:#fff;margin-top:2vh}
 .dash .dwin{font-weight:800;color:#7b3fa0}.dash .dwin b{color:#c0392b}
 /* 전체화면 버튼 */
@@ -950,7 +951,7 @@ function dashHtml(){
 }
 // 접은 이벤트: 대시보드(상단 고정) 아랫줄에 고정 표시, 누르면 전체 팝업 다시
 function evDockHtml(){ if(!g||!g.evNow||!g.evMin||(typeof RO!=='undefined'&&RO)) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
-  return '<div class="evmini" id="evmini" onclick="event.stopPropagation();g.evMin=false;render()">🎉 이벤트 진행 중: <b>'+esc(ev.title)+'</b> <span class="evopen">눌러서 크게 보기</span><div class="evsub">판 끝 「결과 확인」에서 성공한 사람을 골라 같이 정산돼요</div></div>'; }
+  return '<div class="evmini" id="evmini" onclick="event.stopPropagation();g.evMin=false;render()">🎉 이벤트 진행 중: <b>'+esc(ev.title)+'</b> <span class="evopen">눌러서 크게 보기</span>'+evCards(ev.id)+'<div class="evsub">판 끝 「결과 확인」에서 성공한 사람을 골라 같이 정산돼요</div></div>'; }
 function tierBarHtml(){
   if (!g) return '';
   var ai=L.allIn(g); if (ai.length) return '<b style="color:#c00">'+esc(ai.join(', '))+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요</b>';
@@ -1141,7 +1142,12 @@ function evCards(id){ return '<div class="evcards">'+(EVCARDS[id]||[]).map(funct
   return '<div class="hcardwrap"><img class="hcardimg" src="'+src+'" alt="'+lab+'" loading="lazy"><div class="hcardlab">'+lab+'</div></div>'; }).join('')+'</div>'; }
 // 대기 중인 이벤트: 판 반영 때 g.evPending에만 넣고, 다음 판에서 죽음·광팔이를 켠 뒤에만 팝업(g.evNow)
 // 10판마다 4~6판 이벤트(개수·판 모두 랜덤)(어느 판인지는 랜덤): g.evBag에서 하나씩 꺼냄
-function evDraw(){ if(typeof window.EV_P==='number') return Math.random()<window.EV_P; if(!g.evBag||!g.evBag.length){ var n=4+Math.floor(Math.random()*3), b=[]; for(var k=0;k<10;k++) b.push(k<n?1:0); for(var i=b.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=b[i];b[i]=b[j];b[j]=t;} g.evBag=b; } return !!g.evBag.shift(); }
+function evDraw(){ if(typeof window.EV_P==='number') return Math.random()<window.EV_P; if(!g.evBag||!g.evBag.length){ var n=4+Math.floor(Math.random()*3), b=[]; for(var k=0;k<10;k++) b.push(k<n?1:0); for(var i=b.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=b[i];b[i]=b[j];b[j]=t;} g.evBag=b; g.evUsed=[]; } return !!g.evBag.shift(); }
+// 비슷한 이벤트 묶음: 10판 안에서 같은 묶음은 한 번만, 묶음부터 고르게 뽑음
+var EVGROUP={godori:'godori',godori5:'godori',hong:'hong',hong3:'hong',cheong:'cheong',cheong3:'cheong',cho:'cho',cho3:'cho',samgwang:'gwang',sagwang_m:'gwang',sam3:'gwang',bisam:'gwang',sagwang:'gwang',ogwang:'gwang',must2:'must',must3:'must',go1:'go',go2:'go'};
+function evGrp(id){ return EVGROUP[id]||id; }
+function evPick(){ var used=g.evUsed||(g.evUsed=[]), grps=[]; L.EVENTS.forEach(function(e){ var k=evGrp(e.id); if(grps.indexOf(k)<0&&used.indexOf(k)<0) grps.push(k); }); if(!grps.length){ used.length=0; L.EVENTS.forEach(function(e){ var k=evGrp(e.id); if(grps.indexOf(k)<0) grps.push(k); }); }
+  var k=grps[Math.floor(Math.random()*grps.length)], c=L.EVENTS.filter(function(e){ return evGrp(e.id)===k; }); used.push(k); return c[Math.floor(Math.random()*c.length)].id; }
 function maybeShowEvent(){ if(RO||!g||!g.evPending||g.evNow) return false; g.evNow=g.evPending; delete g.evPending; return true; }
 function evHtml(){ if(!g.evNow||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
   var units=ev.kind==='mult'?(ev.mult||1):(ev.pts||0); var tip=ev.kind==='mult'?('미션 배수 x'+units+' → 각 '+W(Math.floor(units*g.ppp))+'씩'):('+'+units+'점 → 각 '+W(Math.floor(units*g.ppp))+'씩');
@@ -1528,7 +1534,7 @@ function applyIt(){
   var evMsg='';
   if (evq){ if (evw>=0){ var er=L.eventApply(g, evw, evq); if(er) evMsg=g.players[evw].name+' 님 이벤트 성공! +'+W(er.total); } else g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+evq.title+' 미션 실패 (적용 안 함)'}); g.evNow=null; g.evMin=false; }
   st={}; view='main'; delete g.evPending; // 판 반영 직후엔 팝업 안 띄움. 다음 판 죽음·광팔이 체크 후 maybeShowEvent
-  var ai=L.allIn(g); if (!ai.length && !RO && evDraw()) g.evPending=L.EVENTS[Math.floor(Math.random()*L.EVENTS.length)].id; if (ai.length){ render(); if(evMsg) alert(evMsg); alert(ai.join(', ')+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요'); view='end'; } render(); if(evMsg&&!ai.length) alert(evMsg);
+  var ai=L.allIn(g); if (!ai.length && !RO && evDraw()) g.evPending=evPick(); if (ai.length){ render(); if(evMsg) alert(evMsg); alert(ai.join(', ')+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요'); view='end'; } render(); if(evMsg&&!ai.length) alert(evMsg);
 }
 
 function renderLog(){
