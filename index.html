@@ -946,9 +946,10 @@ if (typeof module!=='undefined') module.exports = L;
 <script>
 // ===== 화면 =====
 // v2: 0원 시작 + 3종 충전 버튼. 예전 v1 저장분(시작 10만원 방식)은 읽지 않고 새 게임 화면으로 시작
+var EV_OFF=true; // JB 2026-11-09: 이벤트 발동 안 함
 var KEY='gostop_chip_v2', g=null, prev=null, view='main', st={}, RO=false, roT=0;
 function save(){ if (RO) return; localStorage.setItem(KEY, JSON.stringify({g:g, prev:prev})); }
-function load(){ if (RO) return; try{ var d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.g){ g=d.g; prev=d.prev; if(!g.chg) g.chg=[]; } }catch(e){} }
+function load(){ if (RO) return; try{ var d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.g){ g=d.g; prev=d.prev; if(EV_OFF){ delete g.evPending; g.evNow=null; g.evMin=false; } if(!g.chg) g.chg=[]; } }catch(e){} }
 function snap(){ prev = JSON.stringify(g); }
 function dashTap(i){
   if (view!=='main') return;
@@ -1169,13 +1170,13 @@ function evCards(id){ return '<div class="evcards">'+(EVCARDS[id]||[]).map(funct
   return '<div class="hcardwrap"><img class="hcardimg" src="'+src+'" alt="'+lab+'" loading="lazy"><div class="hcardlab">'+lab+'</div></div>'; }).join('')+'</div>'; }
 // 대기 중인 이벤트: 판 반영 때 g.evPending에만 넣고, 다음 판에서 죽음·광팔이를 켠 뒤에만 팝업(g.evNow)
 // 10판마다 4~6판 이벤트(개수·판 모두 랜덤)(어느 판인지는 랜덤): g.evBag에서 하나씩 꺼냄
-function evDraw(){ if(typeof window.EV_P==='number') return Math.random()<window.EV_P; if(!g.evBag||!g.evBag.length){ var n=4+Math.floor(Math.random()*3), b=[]; for(var k=0;k<10;k++) b.push(k<n?1:0); for(var i=b.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=b[i];b[i]=b[j];b[j]=t;} g.evBag=b; g.evUsed=[]; } return !!g.evBag.shift(); }
+function evDraw(){ if(EV_OFF) return false; if(typeof window.EV_P==='number') return Math.random()<window.EV_P; if(!g.evBag||!g.evBag.length){ var n=4+Math.floor(Math.random()*3), b=[]; for(var k=0;k<10;k++) b.push(k<n?1:0); for(var i=b.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=b[i];b[i]=b[j];b[j]=t;} g.evBag=b; g.evUsed=[]; } return !!g.evBag.shift(); }
 // 비슷한 이벤트 묶음: 10판 안에서 같은 묶음은 한 번만, 묶음부터 고르게 뽑음
 var EVGROUP={godori:'godori',hong:'hong',cheong:'cheong',cho:'cho',samgwang:'gwang',must2:'must',must3:'must',daebak_a:'daebak',daebak_b:'daebak',daebak_c:'daebak'};
 function evGrp(id){ return EVGROUP[id]||id; }
 function evPick(){ var used=g.evUsed||(g.evUsed=[]), grps=[]; L.EVENTS.forEach(function(e){ var k=evGrp(e.id); if(grps.indexOf(k)<0&&used.indexOf(k)<0) grps.push(k); }); if(!grps.length){ used.length=0; L.EVENTS.forEach(function(e){ var k=evGrp(e.id); if(grps.indexOf(k)<0) grps.push(k); }); }
   var k=grps[Math.floor(Math.random()*grps.length)], c=L.EVENTS.filter(function(e){ return evGrp(e.id)===k; }); used.push(k); return c[Math.floor(Math.random()*c.length)].id; }
-function maybeShowEvent(){ if(RO||!g||!g.evPending||g.evNow) return false; g.evNow=g.evPending; delete g.evPending; return true; }
+function maybeShowEvent(){ if(EV_OFF){ if(g){ delete g.evPending; g.evNow=null; g.evMin=false; } return false; } if(RO||!g||!g.evPending||g.evNow) return false; g.evNow=g.evPending; delete g.evPending; return true; }
 function evHtml(){ if(!g.evNow||RO) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
   var units=ev.kind==='mult'?(ev.mult||1):(ev.pts||0); var tip=ev.kind==='mult'?('미션 배수 x'+units+' → 각 '+W(Math.floor(units*g.ppp))+'씩'):('+'+units+'점 → 각 '+W(Math.floor(units*g.ppp))+'씩');
   if(g.evMin) return '';
