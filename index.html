@@ -186,12 +186,10 @@ var L = (function(){
     extra += ppeokNote(g, res);
     return g.players[res.winner].name+' '+opt.score+'점 승'+(opt.giveup?' (총통 포기)':'')+(opt.go?' ('+opt.go+'고)':'')+rn+' / '+detail+extra;
   }
-  // 고 점수: 1고 +1점, 2고 +2점 (점수에 먼저 더함), 3고부터 점수 그대로 x2, 4고 x4, 5고 x8 ...
+  // 고 점수 (피망·한게임 모바일): 고마다 +1점. 3고부터 (점수+고 수) x2, 4고 x4, 5고 x8 ...
   function goScore(base, go){
     if (go<=0) return {score:base, mul:1};
-    if (go===1) return {score:base+1, mul:1};
-    if (go===2) return {score:base+2, mul:1};
-    return {score:base, mul:Math.pow(2, go-2)};
+    return {score:base+go, mul: go>=3 ? Math.pow(2, go-2) : 1};
   }
   // opt: {score, go, shake(흔들기 횟수), bomb(폭탄 횟수), losers:[{idx, pi, gwang, meong, gobak}]}
   // 총통 승: 정해진 점수(기본 10점) x 점당 금액, 다른 배수 없음
@@ -265,6 +263,8 @@ var L = (function(){
     var gu = opt.giveup ? giveupInfo(g) : null;
     var gs = goScore(opt.score, opt.go||0);
     var common = gs.mul * Math.pow(2, (opt.shake||0) + (opt.bomb||0)) * (g.nextMult||1) * (gu ? gu[0] : 1);
+    // 멍박(모바일 룰): 이긴 사람 열끗 7장 이상 → 진 사람 전원 2배 (한 사람만 체크해도 모두 적용)
+    var meongAll = opt.losers.some(function(l){ return l.meong; });
     var lines = opt.losers.map(function(l){
       var m = common, f = [];
       if (gs.mul>1) f.push([gs.mul, opt.go+'고']);
@@ -274,17 +274,18 @@ var L = (function(){
       if ((g.nextMult||1)>1) f.push([g.nextMult,'지난 판 무효']);
       if (l.pi){ m*=2; f.push([2,'피박']); }
       if (l.gwang){ m*=2; f.push([2,'광박']); }
-      if (l.meong){ m*=2; f.push([2,'멍박']); }
+      if (meongAll){ m*=2; f.push([2,'멍박']); }
       var base = gs.score * g.ppp, raw = base * m;
-      var sc = (opt.go===1||opt.go===2) ? gs.score+'점('+opt.score+'점+'+opt.go+'고)' : gs.score+'점';
+      var sc = (opt.go>=1) ? gs.score+'점('+opt.score+'점+'+opt.go+'고)' : gs.score+'점';
       var formula = sc+' x '+won(g.ppp)+' = '+won(base) + (f.length ? f.map(function(x){return ', x'+x[0]+'('+x[1]+')';}).join('') + ' = '+won(raw) : '');
       return { idx:l.idx, score:gs.score, mult:m, parts:f.map(function(x){return x[1]+' x'+x[0];}), formula:formula, raw: raw };
     });
-    // 고박: 고를 불렀다가 진 사람이 다른 패자 몫까지 모두 내고, 그 합계에 무조건 2배
+    // 고박 (모바일 룰): 고를 불렀다가 진 사람이 다른 진 사람 몫(그 사람 피박·광박·멍박 등 배수 포함)까지 혼자 다 냄. 추가 배수 없음
     var gb = opt.losers.filter(function(l){ return l.gobak; });
     if (gb.length===1){
       var total = lines.reduce(function(s,x){return s+x.raw;},0);
-      lines.forEach(function(x){ x.gobakTo = gb[0].idx; x.raw = (x.idx===gb[0].idx) ? total*2 : 0; });
+      lines.forEach(function(x){ x.gobakTo = gb[0].idx; x.share = x.raw; x.shareFormula = x.formula; });
+      lines.forEach(function(x){ x.raw = (x.idx===gb[0].idx) ? total : 0; });
     }
     lines.forEach(function(x){
       var bal = g.players[x.idx].bal;
@@ -318,7 +319,7 @@ var L = (function(){
   }
   function voidRound(g, doubleNext){
     delete g.gpPick; delete g.pkPick; delete g.pkDone; delete g.pkRec; delete g.gwCur; delete g.deadPick; delete g.seonPick; delete g.gpAutoDead; g.round++;
-    if (doubleNext) g.nextMult = (g.nextMult||1)*2;
+    if (doubleNext) g.nextMult = Math.min(8, (g.nextMult||1)*2); // 모바일 룰: 나가리 누적 최대 8배
     g.log.unshift({t:'무효', r:g.round, txt:'무효(나가리·쇼당)'+(doubleNext?', 다음 판 x'+g.nextMult:'')});
   }
   // 충전: 충전 내역(chg)에 시각·사람·금액·충전 후 잔액을 남긴다
@@ -1033,10 +1034,10 @@ function RULES(){
  var gp = g ? L.gwangPriceOf(g) : 1500, who = L.gwangPayerText(g||{});
  return '<details><summary>룰 설명 (눌러서 보기)</summary>'+
  '<p><b>기본</b>: 지급액 = 점수 x 점당 금액 x 배수. 진 사람마다 따로 계산해요.</p>'+
- '<p><b>고</b>: 1고는 +1점, 2고는 +2점을 점수에 먼저 더해요. 3고부터는 점수 그대로 2배씩 (3고 x2, 4고 x4, 5고 x8).</p>'+
+ '<p><b>고</b>: 고마다 +1점. 3고부터는 2배씩 (3고 (점수+3) x2, 4고 (점수+4) x4, 5고 (점수+5) x8).</p>'+
  '<p><b>흔들기·폭탄</b>: 한 번마다 2배 (모든 진 사람에게 적용).</p>'+
- '<p><b>피박·광박·멍박</b>: 해당되는 진 사람만 각각 2배. 3명 이상이어도 박은 그 사람에게만 적용해요.</p>'+
- '<p><b>고박</b>: 고를 불렀다가 다른 사람이 이기면, 고 부른 사람이 다른 진 사람 몫까지 혼자 다 내고, 그 합계를 무조건 2배로 내요.</p>'+
+ '<p><b>피박·광박</b>: 해당되는 진 사람만 각각 2배. 3명 이상이어도 그 사람에게만 적용해요.</p><p><b>멍박</b>: 이긴 사람 열끗이 7장 이상이면 진 사람 전원 2배예요.</p>'+
+ '<p><b>고박</b>: 고를 불렀다가 다른 사람이 이기면, 고 부른 사람이 다른 진 사람 몫까지 혼자 다 내요. 다른 사람이 피박·광박 등으로 체크돼 있으면 그 배수가 붙은 몫 그대로 대신 내요 (추가 2배 없음). 다른 진 사람은 0원.</p>'+
  '<p><b>총통 승</b>: 처음 받은 손패에 같은 월 4장이 있으면 바로 이겨요. 승자만 고르면 정해진 점수(기본 10점, 설정에서 변경) x 점당 금액을 진 사람 전원이 내요. 고·흔들기·폭탄·박·지난 판 무효 배수는 적용하지 않아요. 광팔이·죽음·광값 규칙은 똑같아요.</p>'+
  '<p><b>3연뻑 승</b>: 3연뻑으로 이기면 승자만 고르고 "3연뻑 승" 버튼을 눌러요. 3연뻑 점수('+L.ppeokPoints(g||{},3)+'점) x 점당 금액만 진 사람 전원이 내고, 기본 점수나 다른 배수·박은 없어요.</p>'+
  '<p><b>최종3뻑 승</b>: 첫뻑·연뻑이 아닌 따로 한 3번째 뻑으로 이기면 "최종3뻑 승" 버튼. '+L.ppeokNPts(g||{},3)+'점 x 점당 금액만 진 사람 전원이 내요 (기본 3점·박·배수 없음).</p>'+
@@ -1044,7 +1045,7 @@ function RULES(){
  '<p><b>이벤트</b>: 점당 상관없이 모든 판에서, 판을 반영한 뒤, 다음 판에서 죽음(쉼) 또는 광팔이를 체크하면 가끔 이벤트 팝업이 떠요(판 반영 직후·패 돌리는 중에는 안 떠요). 내용은 피망·한게임 모바일 맞고·고스톱 미션을 따라요. 선착순(그림 상관없이 열끗 3장·띠 4장·피 8장 먼저), 대박(미션패 3장 중 1장만 먹기), 무조건(승자에게), 쿵짝·팡팡, 족보 미션(고도리·홍단·청단·초단·삼광)이 나오고, 모두 <b>배수형</b>이라 x2·x3처럼 배수만큼 점 단위로 받아요. 성공한 사람을 누르면 잔액 있는 다른 사람 각자에게서 받아요. 없는 족보(예: 광구사)는 넣지 않아요.</p>'+ '<p style="font-size:12px;color:#888">패 그림: Wikimedia Commons Hwatu (CC BY-SA 4.0)</p>'+
  '<p><b>총통 포기하고 진행</b>: 총통을 들고도 그냥 판을 이어 가면, 그 판은 폭탄으로 쳐서 2배만 적용해요(기본). 설정에서 4배를 고르면 흔들기+폭탄을 합쳐 4배로 계산해요. 이때 흔들기·폭탄 횟수는 따로 넣지 마세요.</p>'+
  '<p><b>뻑</b>: 판 끝 점수 화면에서 뻑 먹은 사람과 단계를 넣으면 판 반영 때 한 번만 정산해요(카드에서는 정산 안 함). 첫뻑 '+L.ppeokPoints(g||{},1)+'점, 2연뻑 '+L.ppeokPoints(g||{},2)+'점, 3연뻑 '+L.ppeokPoints(g||{},3)+'점 (단계마다 x'+L.ppeokMultOf(g||{})+', 설정에서 변경). 연뻑이 아니라 끊긴 뒤 따로 다시 한 뻑은 "따로+"로 넣고 같은 판 안에서 몇 번째인지 따로 세요: 1번째 '+L.ppeokNPts(g||{},1)+'점, 2번째 '+L.ppeokNPts(g||{},2)+'점, 3번째(마지막) '+L.ppeokNPts(g||{},3)+'점 (연뻑이 끊긴 뒤 다시 한 뻑도 다음 번째, 판 반영·무효 때 초기화). 낼 사람: 이번 판에 친 사람만(죽은 사람·광팔이처럼 쉬는 사람은 안 내요). 잔액보다 많이 낼 수 없어요. 총통 승 판에는 없어요.</p>'+
- '<p><b>무효(나가리·쇼당)</b>: 돈이 오가지 않고, 다음 판 점수가 2배가 돼요 (끌 수 있음).</p>'+
+ '<p><b>무효(나가리·쇼당)</b>: 돈이 오가지 않고, 다음 판 점수가 2배가 돼요 (끌 수 있음). 또 무효면 또 2배 (최대 8배).</p>'+
  '<p><b>선과 광팔이</b>: 판마다 선만 고르면 순서(두 번째, 세 번째, 마지막)는 사람 목록 순서대로 정해져요. 4명이면 "광팔이 있음"이 기본으로 체크돼 있고, 마지막 주자가 광팔이로 쉬어요(두 번째·세 번째는 진행). 체크를 끄면 두 번째·세 번째 중 죽은 사람을 체크해 주세요. 설정에서 광팔이 규칙을 끌 수 있어요.</p>'+
  '<p><b>죽음(포기)</b>: 죽은 사람은 그 판 점수 정산에서 빠지고(내지도 받지도 않음) 광값·뻑 값도 내지 않아요. 광팔이와 죽은 사람은 함께 있을 수 있어요(4명이면 광팔이 1명 + 죽음 1명 → 2명이 침). 카드나 판 끝 화면에서 "죽음"을 체크해요. 이미 정산된 광값이 있을 때 죽음 체크가 바뀌면 자동으로 다시 계산해요(죽은 사람 몫은 돌려주고 남은 사람끼리 다시, 기록에 "재정산"). 판 반영 때 정산된 뻑은 "뻑 내역"에서 죽은 사람을 고르면 그 사람 몫을 돌려줘요.</p>'+
  '<p><b>광값</b>: 카드의 광팔이 +를 누를 때마다(광이나 쌍피 1개) 그 사람이 광팔이로 체크되고, 광팔이 본인과 선을 뺀 나머지(2·3번째 주자) 각자에게서 '+W(gp)+'씩 바로 받아요. 예: 4명이면 2명에게서 각 '+W(gp)+', 광팔이는 +'+W(gp*2)+'. 죽은 사람은 내지 않아요. 선은 판 끝 화면에서 고른 선, 없으면 직전 판 승리자예요(카드에 "선" 표시). 선을 바꾸면 이미 받은 광값을 자동으로 다시 계산해요(기록에 "재정산"). -는 가장 최근 1개를 정확히 환불해요(받은 돈을 이미 썼으면 막혀요). 판 끝 화면의 광값 +/-도 같은 정산이고, 판 반영 때 다시 계산하지 않아요.</p>'+
@@ -1505,8 +1506,8 @@ function renderS2(){
   Object.keys(st.lo).forEach(function(i){
     var o=st.lo[i];
     h+='<div class="box"><h2>'+esc(g.players[i].name)+' (잔액 '+W(g.players[i].bal)+')</h2>';
-    [['pi','피박'],['gwang','광박'],['meong','멍박'],['gobak','고박 (고 불렀다 짐)']].forEach(function(a){
-      h+='<label class="ck"><input type="checkbox" '+(o[a[0]]?'checked':'')+' onchange="st.lo['+i+'].'+a[0]+'=this.checked">'+a[1]+'</label>';
+    [['pi','피박'],['gwang','광박'],['meong','멍박 (이긴 사람 열끗 7장↑ → 전원)'],['gobak','고박 (고 불렀다 짐)']].forEach(function(a){
+      h+='<label class="ck"><input type="checkbox" '+(o[a[0]]?'checked':'')+' onchange="'+(a[0]==='meong'?'Object.keys(st.lo).forEach(function(k){st.lo[k].meong=this.checked;},this);render()':'st.lo['+i+'].'+a[0]+'=this.checked')+'">'+a[1]+'</label>';
     });
     h+='</div>';
   });
@@ -1516,6 +1517,7 @@ function renderS2(){
 function toS3(){
   st.score=+$('sc').value;
   if (!(st.score>0)) return alert('점수를 넣어 주세요');
+  if (st.score<3 && !g.admin) return alert('고스톱은 3점부터 나요. 3점 이상을 넣어 주세요');
   st.score=numClamp('score',st.score);
   [['sgo','go'],['ssh','shake'],['sbo','bomb']].forEach(function(a){ var el=$(a[0]); st[a[1]]=numClamp(a[1], el&&el.value!==''?el.value:0); });
   var gb=Object.keys(st.lo).filter(function(i){return st.lo[i].gobak;});
@@ -1534,8 +1536,8 @@ function renderS3(){
   var r=curRes(), h='<div class="box"><h2>'+(r.ppeokNWin?'최종3뻑 승: 결과 확인':r.ppeokWin?'3연뻑 승: 결과 확인':r.chongtong?'총통 승: 결과 확인':'3단계: 결과 확인')+'</h2>';
   r.lines.forEach(function(x){
     var nm=esc(g.players[x.idx].name);
-    if (x.gobakTo!==undefined && x.idx!==x.gobakTo){ h+='<div class="calc">'+nm+': 고박이라 안 냄 = <b>0원</b></div>'; return; }
-    var formula = x.gobakTo!==undefined ? '고박, 모든 진 사람 몫 합계 '+W(x.raw/2)+' x2(고박) = <b>'+W(x.raw)+'</b>' : esc(x.formula).replace(/= ([^=]*)$/,'= <b>$1</b>');
+    if (x.gobakTo!==undefined && x.idx!==x.gobakTo){ h+='<div class="calc">'+nm+': 고박이라 안 냄 = <b>0원</b> (이 사람 몫 '+W(x.share)+'은 '+esc(g.players[x.gobakTo].name)+' 님이 대신 냄)</div>'; return; }
+    var formula = x.gobakTo!==undefined ? '고박, 진 사람 몫 모두 대신 냄<br>'+r.lines.map(function(y){ return '· '+esc(g.players[y.idx].name)+' 몫: '+esc(y.shareFormula); }).join('<br>')+'<br>합계 '+r.lines.map(function(y){ return W(y.share); }).join(' + ')+' = <b>'+W(x.raw)+'</b>' : esc(x.formula).replace(/= ([^=]*)$/,'= <b>$1</b>');
     h+='<div class="calc">'+nm+': '+formula+
       (x.capped?'<br><span class="warn">잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>';
   });
