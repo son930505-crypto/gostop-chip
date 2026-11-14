@@ -923,6 +923,10 @@ var L = (function(){
     var cred = rows.filter(function(r){return r.net>0;}).map(function(r){return {i:r.i, v:r.net};});
     var debt = rows.filter(function(r){return r.net<0;}).map(function(r){return {i:r.i, v:-r.net};});
     var tr = [];
+    // 세훈(송세) 낼 돈은 되도록 미경에게 먼저 (남는 받을 돈은 다른 사람 돈으로 채움)
+    function nmIs(i, re){ return re.test(String(g.players[i].name||'').replace(/\s/g,'')); }
+    debt.forEach(function(d){ if (!(d.v>0) || !nmIs(d.i, /^(세훈|송세|송세훈)$/)) return;
+      cred.forEach(function(c){ if (d.v>0 && c.v>0 && nmIs(c.i, /^미경$/)){ var a=Math.min(c.v,d.v); tr.push({from:d.i,to:c.i,amt:a}); c.v-=a; d.v-=a; } }); });
     // 금액이 정확히 같은 쌍 먼저 (이체 횟수 줄이기)
     debt.forEach(function(d){ var c = cred.find(function(c){return c.v===d.v && c.v>0;}); if (c && d.v>0){ tr.push({from:d.i,to:c.i,amt:d.v}); c.v=0; d.v=0; } });
     while (true){
