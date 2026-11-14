@@ -79,23 +79,57 @@ select{font-size:16px;padding:10px;border-radius:10px;background:#0f1a14;color:#
 .kt .hn{font-size:2.5vh;font-weight:800;line-height:1.1;margin-top:.3vh;white-space:nowrap}
 .kt .hd{font-size:1.6vh;color:#b9cdbf;white-space:nowrap}
 .credit{font-size:1.3vh;color:#5f7a69;text-align:right;margin-top:.4vh;flex:0 0 auto}
-/* 폰(세로) */
+/* 폰(세로)·폴드 펼침(거의 정사각): 한 화면에 족보+칩+베팅 */
 @media(max-aspect-ratio:1/1){
- #dash{height:auto;min-height:100vh;overflow:visible;padding:10px}
+ html,body{height:100%;overflow:hidden}
+ #dash{height:100vh;height:100dvh;max-height:100dvh;min-height:0;overflow:hidden;padding:4px;gap:4px}
+ .top{flex-wrap:nowrap;gap:4px;flex:0 0 auto;min-width:0}
+ .top .ttl{font-size:14px}
+ .top .gt{font-size:11px;padding:2px 6px}
+ .top .rd{font-size:12px}
+ .top .rd small{font-size:10px}
+ .top .lastlog{display:none}
+ .tb{font-size:11px;padding:5px 6px;flex:0 1 auto;min-width:0}
+ .players{flex:0 0 auto;grid-template-columns:repeat(auto-fit,minmax(0,1fr))!important;grid-template-rows:auto!important;gap:4px}
+ .pc{min-height:0;padding:4px 7px;border-radius:8px;display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;align-items:center;column-gap:5px;row-gap:0;flex-direction:unset;flex-wrap:unset}
+ .pc .pbadges{margin-bottom:0;gap:3px;grid-column:1;grid-row:1}
+ .pc .nm{font-size:13px;padding-right:0;grid-column:1 / 4;grid-row:1;min-width:0}
+ .pc:has(.pbadges:not(:empty)) .nm{grid-column:2 / 4}
+ .pc .sb{font-size:10px;top:auto;right:auto;padding:1px 5px}
+ .pc .ch{font-size:11px;grid-column:1 / 3;grid-row:2;min-width:0}
+ .pc .wn{font-size:12px;grid-column:3;grid-row:2;white-space:nowrap}
+ .pc .wn small{font-size:10px}
+ .pc .hist{display:none}
+ .tile .cds,.kt .cds{align-items:flex-end}
+ .jb{flex:1 1 auto;min-height:0;overflow:hidden;padding:4px 6px}
+ .jb h3{font-size:12px;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .jb h3 small{font-size:10px;margin-left:6px}
+ .tiles{flex:1.8 1 0;min-height:0;grid-template-columns:repeat(7,1fr)!important;grid-template-rows:none!important;gap:3px}
+ .tile{padding:2px 1px;border-radius:6px}
+ .tile .cds{height:auto;flex:1 1 auto;min-height:0;gap:2px}
+ .tile .cds img{max-width:48%;height:100%;max-height:100%;object-fit:contain}
+ .tile .no{font-size:9px;padding:0 3px;top:2px;left:2px}
+ .tile .hn{font-size:10px;margin-top:1px;font-weight:700}
+ .tile .hd{display:none}
+ .kuth{font-size:10px;margin:3px 0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .kuts{flex:0.9 1 0;min-height:0;max-height:34%;grid-template-columns:repeat(10,1fr);gap:3px}
+ .kt{padding:2px 1px;border-radius:6px}
+ .kt .cds{height:auto;flex:1 1 auto;min-height:0}
+ .kt .hn{font-size:10px;margin-top:1px}
+ .kt .hd{display:none}
+ .kt .no{font-size:8px}
+ .credit{display:none}
+}
+@media(max-aspect-ratio:1/1) and (max-width:500px){
  .top{flex-wrap:wrap}
- .top .ttl{font-size:22px}.top .gt{font-size:13px}.top .rd{font-size:18px}.top .rd small{font-size:12px}
- .top .lastlog{flex-basis:100%;text-align:left;font-size:13px;order:9}
- .tb{font-size:15px;padding:12px 10px;flex:1}
- .players{flex:none;grid-template-columns:repeat(2,1fr)!important;grid-template-rows:none!important;gap:8px}
- .pc{min-height:96px;padding:8px}
- .pc .nm{font-size:22px}.pc .sb{font-size:13px;top:6px;right:6px;padding:2px 8px}
- .pc .wn{font-size:26px}.pc .wn small{font-size:12px}
- .pc .hist{font-size:12px;min-height:18px;gap:3px}.pc .tap{font-size:11px}
- .jb{flex:none;padding:10px}.jb h3{font-size:17px}.jb h3 small{font-size:12px}
- .tiles{grid-template-columns:repeat(2,1fr)!important;grid-template-rows:none!important;gap:8px}
- .tile{padding:8px 4px}.tile .cds{height:120px;flex:none;gap:6px}.tile .no{font-size:13px}
- .kuts{flex:none;grid-template-columns:repeat(5,1fr);gap:6px}.kt .cds{height:70px;flex:none}.kt .hn{font-size:14px}.kt .hd{font-size:11px}.kt .no{font-size:10px}.kuth{font-size:12px}
- .tile .hn{font-size:19px}.tile .hd{font-size:12px}.credit{font-size:10px}
+ .tb{padding:4px 5px;font-size:10px}
+ .pc{display:flex!important;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:0 3px;padding:14px 4px 3px;position:relative;grid-template-columns:none;grid-template-rows:none}
+ .pc .pbadges{position:absolute;top:2px;right:3px;left:auto;grid-column:auto;grid-row:auto;flex-direction:row;flex-wrap:nowrap}
+ .pc .nm,.pc:has(.pbadges:not(:empty)) .nm{grid-column:auto;grid-row:auto;flex:1 1 100%;font-size:12px}
+ .pc .ch{grid-column:auto;grid-row:auto;flex:1 1 auto;font-size:10px}
+ .pc .wn{grid-column:auto;grid-row:auto;flex:0 0 auto;font-size:10px}
+ .tiles{grid-template-columns:repeat(5,1fr)!important}
+ .kuts{grid-template-columns:repeat(5,1fr);max-height:40%}
 }
 /* ---------- 마감 요약 · 지난 기록 ---------- */
 .tb.cl{background:#7a2a1e;color:#fff;font-weight:800}
@@ -207,25 +241,27 @@ select{font-size:16px;padding:10px;border-radius:10px;background:#0f1a14;color:#
 .rkr.dn em,.rkr.dn small{color:#ff9f7a}
 .chiprk .rkr em{font-size:2.2vh;white-space:nowrap}
 .chiprk .rkr small{width:auto;min-width:7vw;font-size:2.2vh;font-weight:800}
+.betinfo{display:flex;flex-direction:column;gap:.5vh}
 @media(max-aspect-ratio:1/1){
-  .players{flex:none}
-  .pc .ch{font-size:14px}
-  .pc .pbadges{gap:4px;margin-bottom:2px}
+  .pc .ch{font-size:11px}
+  .pc .pbadges{gap:3px;margin-bottom:0}
   .pc .sb{position:static;top:auto;right:auto}
-  .pc.turn{transform:none;box-shadow:0 0 0 3px #f2c14e}
-  #dash{padding-bottom:280px}
-  .betbar{position:fixed;left:0;right:0;bottom:0;z-index:4;padding:10px 10px 14px;border-radius:14px 14px 0 0;box-shadow:0 -8px 24px #0009;gap:6px}
-  .betpot{font-size:18px}
-  .betturn{font-size:22px}
-  .betlog,.betmsg{font-size:13px}
-  .betacts{grid-template-columns:repeat(6,1fr);gap:8px}
-  .betacts button{min-height:58px;font-size:17px;padding:10px 4px;border-radius:12px}
-  .ba.ck,.ba.cl,.ba.hf{grid-column:span 2}
-  .ba.rz,.ba.di{grid-column:span 3;min-height:62px;font-size:18px}
-  .betundo{min-height:48px;font-size:16px}
+  .pc.turn{transform:none;box-shadow:0 0 0 2px #f2c14e}
+  .betbar{position:static;padding:4px 6px;border-radius:8px;box-shadow:none;gap:3px;flex:0 0 auto}
+  .betinfo{flex-direction:row;flex-wrap:nowrap;align-items:baseline;gap:6px;overflow:hidden;white-space:nowrap;min-width:0}
+  .betpot,.betturn,.betmsg{font-size:13px;font-weight:800;flex:0 0 auto}
+  .betlog{display:none}
+  .betacts{grid-template-columns:repeat(5,1fr);gap:4px}
+  .betacts button,.ba.ck,.ba.cl,.ba.hf,.ba.rz,.ba.di{grid-column:auto;min-height:32px;font-size:12px;padding:4px 2px;border-radius:8px}
+  .betundo{min-height:24px;font-size:11px;padding:3px}
   .raisein{font-size:16px}
   .raisein input{font-size:18px;padding:10px;width:7em}
   .chiprk .rkr em,.chiprk .rkr small{font-size:14px}
+}
+@media(max-aspect-ratio:1/1) and (max-width:500px){
+  .betpot,.betturn,.betmsg{font-size:12px}
+  .betacts button,.ba.ck,.ba.cl,.ba.hf,.ba.rz,.ba.di{min-height:30px;font-size:11px}
+  .betundo{min-height:22px;font-size:10px;padding:2px}
 }
 
 </style>
@@ -649,8 +685,8 @@ function renderBetBar(){
     '<button class="ba rz" '+(canRz?'':'disabled')+' onclick="openRaise()">레이즈</button>'+
     '<button class="ba di" '+(canDi?'':'disabled')+' onclick="betDie()">다이</button>'+
     '</div>'):'';
-  bar.innerHTML='<div class="betpot">판돈 '+chipTxt(b.pot)+'</div>'+turn+
-    '<div class="betlog">'+(b.log||'')+'</div>'+acts+
+  bar.innerHTML='<div class="betinfo"><div class="betpot">판돈 '+chipTxt(b.pot)+'</div>'+turn+
+    '<div class="betlog">'+(b.log||'')+'</div></div>'+acts+
     '<button class="betundo" '+(canUndo?'':'disabled')+' onclick="undoBet()">이전 행동 취소</button>';
 }
 
