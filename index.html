@@ -442,9 +442,9 @@ var L = (function(){
       txt = '이벤트 수정: '+tag+' - '+nm(j)+' 빠짐 → '+won(bk)+' 돌려줌'+(bk<x.pay?' (관리자: 잔액 한도)':'');
     } else {
       if (x) return {ok:false, msg:nm(j)+' 님은 이미 낸 사람이에요'};
-      var pay = Math.min(rec.each, Math.max(0, g.players[j].bal));
+      var pay = g.admin ? rec.each : Math.min(rec.each, Math.max(0, g.players[j].bal));
       if (!pay) return {ok:false, msg:nm(j)+' 님은 잔액이 0원이라 낼 수 없어요'};
-      g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay;
+      g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay; if (g.admin) markNeg(g, [j]);
       var k = rec.out.indexOf(j); if (k>=0) rec.out.splice(k, 1);
       txt = '이벤트 수정: '+tag+' - '+nm(j)+' 추가 → '+won(pay)+' 냄';
     }
@@ -496,7 +496,7 @@ var L = (function(){
     return (p?p.name:'?')+' 벌금 -'+won(f.total)+' ('+f.to.map(function(x){ return nm(x.i); }).join('·')+' +각 '+won(f.each)+(cap.length?', 잔액 부족: '+cap.map(function(x){ return nm(x.i)+' '+won(x.pay)+'만'; }).join(', '):'')+')';
   }
   function fine(g, i, kind, now){
-    var f = finePreview(g, i, kind); if (!f.to.length || !live(g, i)) return null;
+    var f = finePreview(g, i, kind); if (!f.to.length || (!live(g, i) && !g.admin)) return null;
     if (!g.fines) g.fines = [];
     g.fineSeq = Math.max(g.fineSeq||0, g.fines.reduce(function(m,x){ return Math.max(m, x.id); }, 0)) + 1;
     var over = overOf(i, g.players[i].bal, f.to);
@@ -571,7 +571,7 @@ var L = (function(){
   function foolStep(g, i, d, now){
     var p = g.players[i]; if (!p) return {ok:false};
     if (d>0){
-      if (!live(g, i)) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 멍청이 돈을 낼 수 없어요. 먼저 충전해 주세요'};
+      if (!live(g, i) && !g.admin) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 멍청이 돈을 낼 수 없어요. 먼저 충전해 주세요'};
       var each = foolAmtOf(g), to = [];
       g.players.forEach(function(x,j){ if (j===i || !live(g, j)) return; to.push({i:j, pay:each}); }); // 마이너스 진행: 모자라도 다 냄
       if (!to.length) return {ok:false, msg:'받을 사람(잔액 있는 다른 사람)이 없어요'};
@@ -741,9 +741,9 @@ var L = (function(){
       txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 빠짐 → '+won(pbk)+' 돌려줌'+(pbk<x.pay?' (관리자: 잔액 한도)':'');
     } else {
       if (x) return {ok:false, msg:nm(j)+' 님은 이미 낸 사람이에요'};
-      var pay = Math.min(rec.each, Math.max(0, g.players[j].bal));
+      var pay = g.admin ? rec.each : Math.min(rec.each, Math.max(0, g.players[j].bal));
       if (!pay) return {ok:false, msg: nm(j)+' 님은 잔액이 0원이라 낼 수 없어요'};
-      g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay;
+      g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay; if (g.admin) markNeg(g, [j]);
       var k = rec.dead.indexOf(j); if (k>=0) rec.dead.splice(k, 1);
       txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 추가 → '+won(pay)+' 냄';
     }
@@ -1225,7 +1225,7 @@ function renderMain(){
   }
   var h=(g.admin?'<div class="flash" style="background:#b00020">관리자 모드 — 모든 규칙 검사 꺼짐 (어떤 버튼이든 누를 수 있어요)</div>'+adminHtml():'')+evHtml()+dashHtml()+flash+'<div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
   g.players.forEach(function(p,i){
-    var out=!L.live(g,i), neg=!out&&p.bal<=0;
+    var out=!L.live(g,i), neg=!out&&p.bal<=0, hide=out&&!g.admin;
     var dOn=(g.deadPick||{})[i]&&!out;
     h+='<div class="card '+(out?'out':'')+(g.gpPick===i&&!out?' gpon':'')+(dOn?' deadon':'')+'" data-i="'+i+'" onclick="cardTap(event,'+i+')">'+(dOn?'<div class="deadbadge">'+(g.gpPick===i&&!L.gwCount(g,i)?'광팔이 죽음':('죽음(쉼)'+(g.gpPick===i?' · 광팔이':'')))+'</div>':'')+'<div class="nm">'+(L.lastWinner(g)===i?'<span class="winb">👑 승</span> ':'')+(!out&&L.curSeon(g)===i?'<span class="seonb">선</span> ':'')+esc(p.name)+'</div><div class="bal">'+W(p.bal)+'</div>'+
       '<div class="sub">넣은 돈 '+W(p.invested)+' ('+p.charges+'회)</div>'+
@@ -1233,11 +1233,11 @@ function renderMain(){
       '<div class="chgrow3">'+L.CHARGE_AMTS.map(function(a){ return '<button class="b2 chg" data-amt="'+a+'" onclick="doCharge('+i+','+a+')">+'+(a/10000)+'만원</button>'; }).join('')+'</div>'+
       '<div class="finerow"><span class="flab">벌금</span><button class="fine fminus" onclick="fineMinus('+i+')">-</button><span class="fn">'+fc[i].n+'</span><button class="fine fplus" onclick="doFine('+i+')">+</button></div>'+
       // 뻑은 카드에서 정산하지 않음(판 끝 점수 화면에서만 입력, 판 반영 때 한 번 정산). 예전 버전에서 카드로 넣어 둔 뻑만 표시
-      (out?'':'<div class="finerow pkcard"><span class="flab" style="color:#1d3f8a">뻑</span><button class="pkb pkminus" onclick="pkMarkUI('+i+',-1)">-</button><span class="pkl">'+pkLabel(i)+'</span><button class="pkb pkplus" onclick="pkMarkUI('+i+',1)">+</button></div>'+pkDetail(i))+
+      (hide?'':'<div class="finerow pkcard"><span class="flab" style="color:#1d3f8a">뻑</span><button class="pkb pkminus" onclick="pkMarkUI('+i+',-1)">-</button><span class="pkl">'+pkLabel(i)+'</span><button class="pkb pkplus" onclick="pkMarkUI('+i+',1)">+</button></div>'+pkDetail(i))+
       '<div class="finerow foolcard"><span class="flab" style="color:#6a1b9a">멍청이</span><button class="foolb foolminus" onclick="foolStepUI('+i+',-1)">-</button><span class="fn foolon">'+L.foolCount(g,i)+'</span><button class="foolb foolplus" onclick="foolStepUI('+i+',1)">+</button></div>'+
       '<div class="finerow gwcard"><span class="flab" style="color:#8a5a00">광팔이</span><button class="gwb gwminus" onclick="gwStepUI('+i+',-1)">-</button><span class="fn gwn">'+L.gwCount(g,i)+'</span><button class="gwb gwplus" onclick="gwStepUI('+i+',1)">+</button></div>'+
-      (out?'':'<button type="button" class="gpdeadbtn'+(g.gpPick===i?' on':'')+'" onclick="gpDeadUI('+i+')">광팔이 죽음</button>')+
-      (out?'':'<div class="gpcard"><label><input type="checkbox" class="deadcardck" '+((g.deadPick||{})[i]?'checked':'')+(g.admin||(L.deadOk(g)&&!(g.prevDead||{})[i]&&((g.deadPick||{})[i]||!L.restFull(g,i)))?'':' disabled title="'+((g.prevDead||{})[i]?'직전 판에 죽어서 이번 판은 죽음 불가':'이미 쉬는 사람이 있어요 (한 판에 한 명, 나머지 3명은 무조건 참여)')+'"')+' onchange="toggleDeadCard('+i+')">죽음(쉼)'+(g.gpPick===i?' · 광팔이':'')+'</label></div>')+fineCnt(fc[i])+'</div>';
+      (hide?'':'<button type="button" class="gpdeadbtn'+(g.gpPick===i?' on':'')+'" onclick="gpDeadUI('+i+')">광팔이 죽음</button>')+
+      (hide?'':'<div class="gpcard"><label><input type="checkbox" class="deadcardck" '+((g.deadPick||{})[i]?'checked':'')+(g.admin||(L.deadOk(g)&&!(g.prevDead||{})[i]&&((g.deadPick||{})[i]||!L.restFull(g,i)))?'':' disabled title="'+((g.prevDead||{})[i]?'직전 판에 죽어서 이번 판은 죽음 불가':'이미 쉬는 사람이 있어요 (한 판에 한 명, 나머지 3명은 무조건 참여)')+'"')+' onchange="toggleDeadCard('+i+')">죽음(쉼)'+(g.gpPick===i?' · 광팔이':'')+'</label></div>')+fineCnt(fc[i])+'</div>';
   });
   h+='</div><p class="tapnote">카드 흰 바탕 빈 곳을 눌러도 죽음(쉼)이 켜지고 꺼져요 (버튼은 그대로)</p>'+orderNote()+'<button class="b1 big" onclick="toS1()">판 끝! 점수 넣기</button>'+
    '<div class="row"><button class="b3 small" onclick="doVoid()">무효 (나가리·쇼당)</button><button class="b3 small" onclick="undo()">방금 것 되돌리기</button></div>'+
@@ -1376,7 +1376,7 @@ function fineMinus(i){
 }
 function doFine(i,kind){
   kind='fine'; var p=g.players[i], nm='';
-  if (!L.live(g,i)) return alert(p.name+' 님은 잔액이 0원이라 벌금을 낼 수 없어요. 먼저 충전해 주세요');
+  if (!L.live(g,i) && !g.admin) return alert(p.name+' 님은 잔액이 0원이라 벌금을 낼 수 없어요. 먼저 충전해 주세요');
   var pv=L.finePreview(g,i,kind);
   if (!pv.to.length) return alert('벌금을 받을 사람(잔액 있는 다른 사람)이 없어요');
   snap(); var rec=L.fine(g,i,kind);
