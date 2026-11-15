@@ -141,17 +141,18 @@ var L = (function(){
   function simpleSeat(g, seon, gpOn, dead, gpPick){
     var order = seatOrder(g, seon), rest = {}, dd = {}, conflict = null, picked = false;
     var canGp = g.gwangpal!==false && order.length>=4;
-    if (gpPick!==undefined && gpPick!==null && canGp && order.indexOf(gpPick)>=0){
-      if (gpPick===order[0]) conflict = 'seon';
+    if (gpPick!==undefined && gpPick!==null && (canGp || g.admin) && order.indexOf(gpPick)>=0){
+      if (gpPick===order[0] && !g.admin) conflict = 'seon';
+      else if (gpPick===order[0]){ rest[gpPick] = true; picked = true; }
       else { rest[gpPick] = true; picked = true; if (gpPick!==order[order.length-1]) conflict = 'notLast'; }
     }
     // 죽음(쉼) 체크가 하나라도 있으면 '광팔이 있음(마지막 주자 자동 쉼)'은 자동으로 풀리고 죽음 체크대로만 진행 (JB: 광팔이 = 쉬는 사람)
-    var anyDead = Object.keys(dead||{}).some(function(i){ return dead[i] && +i!==order[0] && order.indexOf(+i)>=0 && !rest[i]; });
+    var anyDead = Object.keys(dead||{}).some(function(i){ return dead[i] && (+i!==order[0] || g.admin) && order.indexOf(+i)>=0 && !rest[i]; });
     var lastP = order[order.length-1], lastBlocked = false; // 직전 판 죽은 사람도 마지막 주자면 광팔이가 됨 (광팔이는 항상 마지막 주자)
     if (!picked && conflict!=='seon' && gpOn && canGp && !anyDead && !lastBlocked) rest[lastP] = true;
     // 죽은 사람: 선과 광팔이를 뺀 사람 (카드의 죽음 체크와 같은 상태). 광팔이가 있으면 나머지는 모두 진행 → 죽음 무시
     // (단 5명 이상이라 광팔이를 빼고도 4명 이상 남으면 죽은 사람이 따로 빠질 수 있음)
-    Object.keys(dead||{}).forEach(function(i){ i=+i; var k = order.indexOf(i); if (dead[i] && k>0 && !rest[i]) dd[i] = true; });
+    Object.keys(dead||{}).forEach(function(i){ i=+i; var k = order.indexOf(i); if (dead[i] && (k>0 || (g.admin && k===0)) && !rest[i]) dd[i] = true; });
     return {order: order, seon: order[0], rest: rest, dead: dd, conflict: conflict, picked: picked};
   }
   function gwangPriceOf(g){ return g.gwangPrice>0 ? g.gwangPrice : 1500; }
@@ -340,7 +341,7 @@ var L = (function(){
   // 충전 취소: 그 충전분이 아직 잔액에 남아 있을 때만 (판에서 쓴 칩은 취소 불가)
   function canUndoCharge(g, id){
     var c = (g.chg||[]).filter(function(x){ return x.id===id; })[0];
-    return !!c && g.players[c.i] && g.players[c.i].bal >= c.amt;
+    return !!c && g.players[c.i] && (g.players[c.i].bal >= c.amt || (!!g.admin && g.players[c.i].bal > 0));
   }
   // ===== 시간대별 점당 자동 적용: 첫 충전 시각(g.t0) 기준. 기본 30분까지 1,000 → 1시간30분까지 1,500 → 이후 2,000. 판이 시작될 때(이번 판에 즉시 정산이 없을 때)만 바꿈 =====
   function tiersOf(g){ var t = g.tiers; return (t && t.length===3) ? t : [{min:30, ppp:1000}, {min:90, ppp:1500}, {min:null, ppp:2000}]; }
@@ -360,6 +361,16 @@ var L = (function(){
   function adminSet(g, i, bal, inv){ var p = g.players[i]; if (!p || !g.admin) return false; bal = Math.max(0, Math.floor(+bal)); if (!isFinite(bal)) return false;
     var ob = p.bal, oi = p.invested; p.bal = bal; if (inv!==undefined && inv!=='' && isFinite(+inv)) p.invested = Math.max(0, Math.floor(+inv));
     g.log.unshift({t:'관리자', r:g.round, txt:'관리자 수정: '+p.name+' 잔액 '+won(ob)+' → '+won(p.bal)+(p.invested!==oi?', 넣은 돈 '+won(oi)+' → '+won(p.invested):'')}); return true; }
+  // 관리자 모드: 받은 돈을 이미 써서 다 못 되돌릴 때 잔액 한도 안에서만 되돌림 (잔액 음수 없음, 합계 보존)
+  // giveBack: from이 to[] 각자에게 x.pay씩 돌려주되 from 잔액 한도까지 / takeBack: to[] 각자가 받은 x.pay를 자기 잔액 한도까지 dest에게 돌려줌
+  function giveBack(g, from, to){ var left = Math.max(0, g.players[from].bal), back = 0; (to||[]).forEach(function(x){ if (!g.players[x.i]) return; var a = Math.min(x.pay, left); g.players[x.i].bal += a; left -= a; back += a; }); g.players[from].bal -= back; return back; }
+  function takeBack(g, to, dest){ var back = 0; (to||[]).forEach(function(x){ var q = g.players[x.i]; if (!q) return; var a = Math.min(x.pay, Math.max(0, q.bal)); q.bal -= a; back += a; }); g.players[dest].bal += back; return back; }
+  // 관리자 모드: 그 사람의 이번 판 광값 정산을 모두 되돌리고(잔액 한도) 광팔이·자동 죽음 체크를 풂 → 광팔이 변경·해제 가능
+  function gwClear(g, i){ var recs = gwCurRecs(g).filter(function(r){ return r.i===i; }), back = 0;
+    recs.slice().reverse().forEach(function(r){ back += giveBack(g, r.i, r.to); g.gws.splice(g.gws.indexOf(r), 1); g.gwCur.splice(g.gwCur.indexOf(r.id), 1); });
+    if (g.gpPick===i) delete g.gpPick; if (g.gpAutoDead===i){ if (g.deadPick) delete g.deadPick[i]; delete g.gpAutoDead; }
+    if (recs.length) g.log.unshift({t:'광값', r:g.round+1, txt:'관리자: '+(g.players[i]?g.players[i].name:'?')+' 광값 '+recs.length+'개 되돌림 (+'+won(back)+')'});
+    return back; }
   // 점당 상관없이 모든 판 이벤트. 실제 모바일 맞고·고스톱(피망/한게임/윈조이) 미션·족보만 사용.
   // kind:'mult' = 인게임 미션 배수(족보·무조건·선착순·쿵짝/팡팡), kind:'pts' = 족보·고 +점
   var EVENTS = [
@@ -401,10 +412,10 @@ var L = (function(){
     var x = rec.to.filter(function(t){ return t.i===j; })[0], txt, tag = evTitle(rec)+' '+nm(rec.i)+' 성공 ('+rec.r+'판)';
     if (!pays){
       if (!x) return {ok:false, msg:nm(j)+' 님은 이미 안 낸 사람이에요'};
-      if (g.players[rec.i].bal < x.pay) return {ok:false, msg:nm(rec.i)+' 님 잔액이 '+won(x.pay)+'보다 적어서 돌려줄 수 없어요'};
-      g.players[rec.i].bal -= x.pay; g.players[j].bal += x.pay; rec.to.splice(rec.to.indexOf(x), 1); rec.total -= x.pay;
+      if (g.players[rec.i].bal < x.pay && !g.admin) return {ok:false, msg:nm(rec.i)+' 님 잔액이 '+won(x.pay)+'보다 적어서 돌려줄 수 없어요'};
+      var bk = g.admin ? giveBack(g, rec.i, [x]) : x.pay; if (!g.admin){ g.players[rec.i].bal -= x.pay; g.players[j].bal += x.pay; } rec.to.splice(rec.to.indexOf(x), 1); rec.total -= x.pay;
       if (rec.out.indexOf(j)<0) rec.out.push(j);
-      txt = '이벤트 수정: '+tag+' - '+nm(j)+' 빠짐 → '+won(x.pay)+' 돌려줌';
+      txt = '이벤트 수정: '+tag+' - '+nm(j)+' 빠짐 → '+won(bk)+' 돌려줌'+(bk<x.pay?' (관리자: 잔액 한도)':'');
     } else {
       if (x) return {ok:false, msg:nm(j)+' 님은 이미 낸 사람이에요'};
       var pay = Math.min(rec.each, Math.max(0, g.players[j].bal));
@@ -419,9 +430,9 @@ var L = (function(){
   function evCancel(g, seq){
     evsFix(g); var rec = evFind(g, +seq), nm = function(k){ return g.players[k] ? g.players[k].name : '?'; };
     if (!rec || rec.cancel) return {ok:false, msg:'이미 취소됐거나 없는 기록이에요'};
-    if (g.players[rec.i].bal < rec.total) return {ok:false, msg:nm(rec.i)+' 님 잔액이 '+won(rec.total)+'보다 적어서 취소할 수 없어요'};
-    rec.to.forEach(function(x){ g.players[rec.i].bal -= x.pay; g.players[x.i].bal += x.pay; });
-    var txt = '이벤트 취소: '+evTitle(rec)+' '+nm(rec.i)+' 성공 ('+rec.r+'판) → '+won(rec.total)+' 모두 돌려줌';
+    if (g.players[rec.i].bal < rec.total && !g.admin) return {ok:false, msg:nm(rec.i)+' 님 잔액이 '+won(rec.total)+'보다 적어서 취소할 수 없어요'};
+    var bk = rec.total; if (g.admin) bk = giveBack(g, rec.i, rec.to); else rec.to.forEach(function(x){ g.players[rec.i].bal -= x.pay; g.players[x.i].bal += x.pay; });
+    var txt = '이벤트 취소: '+evTitle(rec)+' '+nm(rec.i)+' 성공 ('+rec.r+'판) → '+won(bk)+(bk<rec.total?' 돌려줌 (관리자: 잔액 한도)':' 모두 돌려줌');
     rec.cancel = true; rec.cancelTo = rec.to; rec.to = []; rec.total = 0;
     g.log.unshift({t:'이벤트', r:g.round, txt:txt}); return {ok:true, txt:txt};
   }
@@ -431,6 +442,11 @@ var L = (function(){
   }
   function allIn(g){ return g.players.filter(function(p){ return p.invested>0 && p.bal<=0; }).map(function(p){ return p.name; }); }
   function undoCharge(g, id){
+    var c0 = (g.chg||[]).filter(function(x){ return x.id===id; })[0];
+    if (g.admin && c0 && g.players[c0.i] && g.players[c0.i].bal < c0.amt){ var ka = (g.chg||[]).map(function(x){ return x.id; }).indexOf(id), ca = g.chg[ka], pa = ca && g.players[ca.i]; if (!pa) return false;
+      var take = Math.min(ca.amt, Math.max(0, pa.bal)); if (!take) return false;
+      pa.bal -= take; pa.invested -= take; ca.amt -= take; ca.after = Math.max(0, ca.after - take);
+      g.log.unshift({t:'충전 취소', r:g.round, txt:'관리자: '+pa.name+' 충전 일부 취소 -'+won(take)+' (남은 칩 한도, 잔액 '+won(pa.bal)+')'}); return true; }
     if (!canUndoCharge(g, id)) return false;
     var k = g.chg.map(function(x){ return x.id; }).indexOf(id), c = g.chg[k], p = g.players[c.i];
     p.bal -= c.amt; p.charges = Math.max(0, p.charges-1); p.invested -= c.amt; g.chg.splice(k, 1); if (!g.chg.length) g.t0 = null;
@@ -468,13 +484,13 @@ var L = (function(){
   // 취소: 받은 사람들이 받은 만큼 아직 잔액에 가지고 있을 때만 (정확히 되돌림)
   function canUndoFine(g, id){
     var f = (g.fines||[]).filter(function(x){ return x.id===id; })[0];
-    return !!f && f.to.every(function(x){ return g.players[x.i] && g.players[x.i].bal >= x.pay; });
+    return !!f && (!!g.admin || f.to.every(function(x){ return g.players[x.i] && g.players[x.i].bal >= x.pay; }));
   }
   function undoFine(g, id){
     if (!canUndoFine(g, id)) return false;
-    var k = g.fines.map(function(x){ return x.id; }).indexOf(id), f = g.fines[k];
-    f.to.forEach(function(x){ g.players[x.i].bal -= x.pay; }); g.players[f.i].bal += f.total; g.fines.splice(k, 1);
-    g.log.unshift({t:'벌금 취소', r:g.round, txt:g.players[f.i].name+' 벌금 취소 (+'+won(f.total)+' 되돌림)'});
+    var k = g.fines.map(function(x){ return x.id; }).indexOf(id), f = g.fines[k], bk = f.total;
+    if (g.admin) bk = takeBack(g, f.to, f.i); else { f.to.forEach(function(x){ g.players[x.i].bal -= x.pay; }); g.players[f.i].bal += f.total; } g.fines.splice(k, 1);
+    g.log.unshift({t:'벌금 취소', r:g.round, txt:g.players[f.i].name+' 벌금 취소 (+'+won(bk)+' 되돌림'+(bk<f.total?', 관리자: 잔액 한도':'')+')'});
     return true;
   }
   function lastFine(g){ var f = g.fines||[]; return f.length ? f[f.length-1] : null; }
@@ -540,9 +556,9 @@ var L = (function(){
     var mine = foolCur(g, i), last = mine[mine.length-1];
     if (!last) return {ok:false, msg:p.name+' 님은 이번 판에 되돌릴 멍청이가 없어요 (지난 판 멍청이는 기록 보기에서 확인)'};
     var short = last.to.filter(function(x){ return !g.players[x.i] || g.players[x.i].bal < x.pay; });
-    if (short.length) return {ok:false, msg:short.map(function(x){ return g.players[x.i].name; }).join('·')+' 님이 멍청이로 받은 돈을 이미 써서 되돌릴 수 없어요'};
-    last.to.forEach(function(x){ g.players[x.i].bal -= x.pay; }); p.bal += last.total; g.fools.splice(g.fools.indexOf(last), 1);
-    g.log.unshift({t:'멍청이', r:g.round+1, txt:p.name+' 멍청이 취소 (+'+won(last.total)+' 돌려받음: '+last.to.map(function(x){ return g.players[x.i].name+' '+won(x.pay); }).join(', ')+')'});
+    if (short.length && !g.admin) return {ok:false, msg:short.map(function(x){ return g.players[x.i].name; }).join('·')+' 님이 멍청이로 받은 돈을 이미 써서 되돌릴 수 없어요'};
+    var fbk = last.total; if (g.admin) fbk = takeBack(g, last.to, i); else { last.to.forEach(function(x){ g.players[x.i].bal -= x.pay; }); p.bal += last.total; } g.fools.splice(g.fools.indexOf(last), 1);
+    g.log.unshift({t:'멍청이', r:g.round+1, txt:p.name+' 멍청이 취소 (+'+won(fbk)+' 돌려받음'+(fbk<last.total?', 관리자: 잔액 한도':'')+': '+last.to.map(function(x){ return g.players[x.i].name+' '+won(x.pay); }).join(', ')+')'});
     return {ok:true, undone:last};
   }
   // ===== 카드 뻑 즉시 정산: + 누르는 즉시 뻑 먹은 사람이 나머지 각자에게서 (뻑 점수 x 그 시점 점당 금액)을 받음 =====
@@ -561,10 +577,11 @@ var L = (function(){
     g.pks.push(rec); return rec;
   }
   function pkReverse(g, rec){
-    rec.to.forEach(function(x){ g.players[x.i].bal += x.pay; }); g.players[rec.i].bal -= rec.total;
+    if (g.admin && g.players[rec.i].bal < rec.total) giveBack(g, rec.i, rec.to);
+    else { rec.to.forEach(function(x){ g.players[x.i].bal += x.pay; }); g.players[rec.i].bal -= rec.total; }
     g.pks.splice(g.pks.indexOf(rec), 1);
   }
-  function pkCanUndo(g, rec){ return !!rec && g.players[rec.i] && g.players[rec.i].bal >= rec.total; }
+  function pkCanUndo(g, rec){ return !!rec && !!g.players[rec.i] && (!!g.admin || g.players[rec.i].bal >= rec.total); }
   function pkText(g, r){
     var nm = function(j){ return g.players[j] ? g.players[j].name : '?'; }, cap = r.to.filter(function(x){ return x.pay < r.each; });
     return nm(r.i)+' '+PPEOK_NAMES[r.level]+' +각 '+won(r.each)+'씩 ('+(r.to.length?r.to.map(function(x){ return nm(x.i); }).join('·'):'받을 사람 없음')+(r.dead&&r.dead.length?', 죽음 '+r.dead.map(nm).join('·')+' 제외':'')+', '+r.points+'점 x '+won(r.ppp)+(cap.length?', 잔액 부족: '+cap.map(function(x){ return nm(x.i)+' '+won(x.pay)+'만'; }).join(', '):'')+')';
@@ -576,12 +593,12 @@ var L = (function(){
     if (!g.pkPick) g.pkPick = {};
     var cur = g.pkPick[i]||0, p = g.players[i], done = ((g.pkDone||{})[i]||[]).slice();
     if (pkFind(g, (g.pkRec||{})[i])) return {ok:false, msg: p.name+' 님 뻑은 예전 방식으로 이미 정산돼 있어요. 고치려면 "뻑 내역"에서 수정해 주세요'};
-    if (d>0 && (g.deadPick||{})[i]) return {ok:false, msg: p.name+' 님은 죽음으로 체크돼 있어서 뻑을 먹을 수 없어요'};
-    if (d>0 && g.gpPick===i) return {ok:false, msg: p.name+' 님은 광팔이로 체크돼 있어서 뻑을 먹을 수 없어요'};
-    if (d>0 && p.bal<=0) return {ok:false, msg: p.name+' 님은 잔액이 0원이라 이번 판에 치지 않아요'};
+    if (d>0 && (g.deadPick||{})[i] && !g.admin) return {ok:false, msg: p.name+' 님은 죽음으로 체크돼 있어서 뻑을 먹을 수 없어요'};
+    if (d>0 && g.gpPick===i && !g.admin) return {ok:false, msg: p.name+' 님은 광팔이로 체크돼 있어서 뻑을 먹을 수 없어요'};
+    if (d>0 && p.bal<=0 && !g.admin) return {ok:false, msg: p.name+' 님은 잔액이 0원이라 이번 판에 치지 않아요'};
     if (d>0){
       if (sep && cur){
-        if (done.length+1 >= PPEOK_MAX_N) return {ok:false, msg: p.name+' 님은 이번 판 뻑이 이미 '+PPEOK_MAX_N+'번째(마지막)예요'};
+        if (done.length+1 >= PPEOK_MAX_N && !g.admin) return {ok:false, msg: p.name+' 님은 이번 판 뻑이 이미 '+PPEOK_MAX_N+'번째(마지막)예요'};
         done.push(cur); cur = 1;
       } else { if (cur>=3) return {ok:false, msg: '3연뻑이 마지막 단계예요. 끊기고 다시 한 뻑이면 "따로 +"를 눌러 주세요'}; cur++; }
     } else {
@@ -664,8 +681,8 @@ var L = (function(){
     if (on){
       if (isDead) return {ok:false};
       var pay = x ? x.pay : 0;
-      if (g.players[rec.i].bal < pay) return {ok:false, msg: nm(rec.i)+' 님 잔액이 '+won(pay)+'보다 적어서 돌려줄 수 없어요'};
-      if (x){ g.players[rec.i].bal -= pay; g.players[j].bal += pay; rec.to.splice(rec.to.indexOf(x), 1); rec.total -= pay; }
+      if (g.players[rec.i].bal < pay && !g.admin) return {ok:false, msg: nm(rec.i)+' 님 잔액이 '+won(pay)+'보다 적어서 돌려줄 수 없어요'};
+      if (x){ if (g.admin){ pay = giveBack(g, rec.i, [x]); } else { g.players[rec.i].bal -= pay; g.players[j].bal += pay; } rec.to.splice(rec.to.indexOf(x), 1); rec.total -= x.pay; }
       rec.dead.push(j);
       txt = '뻑 수정: '+nm(rec.i)+' '+PPEOK_NAMES[rec.level]+(rec.r?' ('+rec.r+'판)':'')+' - '+nm(j)+' 죽음 → '+won(pay)+' 돌려줌 ('+nm(rec.i)+' -'+won(pay)+')';
     } else {
@@ -687,10 +704,10 @@ var L = (function(){
     var x = rec.to.filter(function(t){ return t.i===j; })[0], txt, tag = nm(rec.i)+' '+PPEOK_NAMES[rec.level]+(rec.r?' ('+rec.r+'판)':'');
     if (!pays){
       if (!x) return {ok:false, msg:nm(j)+' 님은 이미 안 낸 사람이에요'};
-      if (g.players[rec.i].bal < x.pay) return {ok:false, msg: nm(rec.i)+' 님 잔액이 '+won(x.pay)+'보다 적어서 돌려줄 수 없어요'};
-      g.players[rec.i].bal -= x.pay; g.players[j].bal += x.pay; rec.to.splice(rec.to.indexOf(x), 1); rec.total -= x.pay;
+      if (g.players[rec.i].bal < x.pay && !g.admin) return {ok:false, msg: nm(rec.i)+' 님 잔액이 '+won(x.pay)+'보다 적어서 돌려줄 수 없어요'};
+      var pbk = x.pay; if (g.admin) pbk = giveBack(g, rec.i, [x]); else { g.players[rec.i].bal -= x.pay; g.players[j].bal += x.pay; } rec.to.splice(rec.to.indexOf(x), 1); rec.total -= x.pay;
       if (rec.dead.indexOf(j)<0) rec.dead.push(j);
-      txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 빠짐 → '+won(x.pay)+' 돌려줌';
+      txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 빠짐 → '+won(pbk)+' 돌려줌'+(pbk<x.pay?' (관리자: 잔액 한도)':'');
     } else {
       if (x) return {ok:false, msg:nm(j)+' 님은 이미 낸 사람이에요'};
       var pay = Math.min(rec.each, Math.max(0, g.players[j].bal));
@@ -707,10 +724,10 @@ var L = (function(){
     if (!g.pkPick) g.pkPick = {}; if (!g.pkRec) g.pkRec = {};
     var cur = g.pkPick[i]||0, nx = Math.max(0, Math.min(3, cur + d)), p = g.players[i];
     if (nx===cur) return {ok:false};
-    if (d>0 && (g.deadPick||{})[i]) return {ok:false, msg: p.name+' 님은 죽음으로 체크돼 있어서 뻑을 먹을 수 없어요 (광팔이·죽은 사람은 뻑 선택 불가)'};
-    if (d>0 && g.gpPick===i) return {ok:false, msg: p.name+' 님은 광팔이로 체크돼 있어서 뻑을 먹을 수 없어요 (광팔이·죽은 사람은 뻑 선택 불가)'};
+    if (d>0 && (g.deadPick||{})[i] && !g.admin) return {ok:false, msg: p.name+' 님은 죽음으로 체크돼 있어서 뻑을 먹을 수 없어요 (광팔이·죽은 사람은 뻑 선택 불가)'};
+    if (d>0 && g.gpPick===i && !g.admin) return {ok:false, msg: p.name+' 님은 광팔이로 체크돼 있어서 뻑을 먹을 수 없어요 (광팔이·죽은 사람은 뻑 선택 불가)'};
     var rec = pkFind(g, g.pkRec[i]);
-    if (d>0 && !rec && p.bal<=0) return {ok:false, msg: p.name+' 님은 잔액이 0원이라 이번 판에 치지 않아요. 뻑을 먹을 수 없어요'};
+    if (d>0 && !rec && p.bal<=0 && !g.admin) return {ok:false, msg: p.name+' 님은 잔액이 0원이라 이번 판에 치지 않아요. 뻑을 먹을 수 없어요'};
     if (rec && !pkCanUndo(g, rec)) return {ok:false, msg: p.name+' 님이 뻑으로 받은 돈을 이미 써서 '+PPEOK_NAMES[cur]+' 정산을 되돌릴 수 없어요'};
     var nr = null, txt;
     if (rec) pkReverse(g, rec);
@@ -780,7 +797,7 @@ var L = (function(){
     Object.keys(g.pkRec||{}).forEach(function(k){
       var i = +k, rec = pkFind(g, g.pkRec[k]), gpNow = (g.gpPick!==undefined && g.gpPick!==null) ? g.gpPick : -1;
       if (!rec || (sameList(rec.dead, deadList(g, i)) && !(ppeokPayerMode(g)==='play' && (rec.gp===undefined ? -1 : rec.gp)!==gpNow))) return;
-      if (!pkCanUndo(g, rec)) throw new Error(nm(i)+' 님이 뻑으로 받은 돈을 이미 써서 다시 계산할 수 없어요');
+      if (!pkCanUndo(g, rec)) throw new Error(nm(i)+' 님이 뻑으로 받은 돈을 이미 써서 다시 계산할 수 없어요'); // 관리자면 pkCanUndo=true, pkReverse가 잔액 한도로 되돌림
       var before = rec.total; pkReverse(g, rec);
       var nr = pkApplyNew(g, i, rec.level, now, rec.ppp, null); if (rec.prev) nr.prev = rec.prev; g.pkRec[k] = nr.id;
       var txt = '뻑 재정산 (죽음·광팔이 체크 바뀜, 받은 돈 '+won(before)+' → '+won(nr.total)+'): '+pkText(g, nr); out.push(txt); g.log.unshift({t:'뻑', r:g.round+1, txt:txt});
@@ -788,8 +805,8 @@ var L = (function(){
     var recs = gwCurRecs(g);
     if (recs.length && recs.some(function(r){ return !sameList(r.dead, deadList(g, r.i)) || (r.seon!==undefined && r.seon!==curSeon(g)); })){
       var gi = recs[0].i, sum = recs.reduce(function(s,r){ return s+r.total; }, 0), eachs = recs.map(function(r){ return r.each; });
-      if (g.players[gi].bal < sum) throw new Error(nm(gi)+' 님이 광값으로 받은 돈을 이미 써서 다시 계산할 수 없어요');
-      recs.slice().reverse().forEach(function(r){ r.to.forEach(function(x){ g.players[x.i].bal += x.pay; }); g.players[r.i].bal -= r.total; g.gws.splice(g.gws.indexOf(r), 1); g.gwCur.splice(g.gwCur.indexOf(r.id), 1); });
+      if (g.players[gi].bal < sum && !g.admin) throw new Error(nm(gi)+' 님이 광값으로 받은 돈을 이미 써서 다시 계산할 수 없어요');
+      recs.slice().reverse().forEach(function(r){ if (g.admin && g.players[r.i].bal < r.total) giveBack(g, r.i, r.to); else { r.to.forEach(function(x){ g.players[x.i].bal += x.pay; }); g.players[r.i].bal -= r.total; } g.gws.splice(g.gws.indexOf(r), 1); g.gwCur.splice(g.gwCur.indexOf(r.id), 1); });
       var tot = 0; eachs.forEach(function(e){ tot += gwApply(g, gi, e, now).total; });
       var txt2 = '광값 재정산 (선·죽음 체크 바뀜, 받은 돈 '+won(sum)+' → '+won(tot)+'): '+gwCurRecs(g).map(function(r){ return gwText(g, r); }).join(' / ');
       out.push(txt2); g.log.unshift({t:'광값', r:g.round+1, txt:txt2});
@@ -808,12 +825,13 @@ var L = (function(){
     var p = g.players[i]; if (!p) return {ok:false};
     if (on){
       if (restFull(g, i)) return {ok:false, msg:'이번 판은 이미 쉬는 사람(죽음·광팔이)이 있어요. 한 판에 쉬는 사람은 한 명이고 나머지 3명은 무조건 참여예요. 먼저 그 체크를 풀어 주세요'};
-      if ((g.pkPick||{})[i]) return {ok:false, msg:p.name+' 님은 이번 판 뻑을 먹었어요. 죽은 사람은 뻑을 먹을 수 없으니 뻑을 먼저 -로 되돌려 주세요'};
+      if ((g.pkPick||{})[i] && !g.admin) return {ok:false, msg:p.name+' 님은 이번 판 뻑을 먹었어요. 죽은 사람은 뻑을 먹을 수 없으니 뻑을 먼저 -로 되돌려 주세요'};
       if ((g.prevDead||{})[i] && !g.admin) return {ok:false, msg:p.name+' 님은 직전 판에 죽었어요. 연속으로 죽을 수 없어요'};
       if (!deadOk(g)) return {ok:false, msg:'광팔이('+g.players[g.gpPick].name+')가 있으면 나머지는 모두 진행해서 죽은 사람이 없어요'};
     }
     if (!on && gwCount(g, i) && !g.admin) return {ok:false, msg:p.name+' 님은 이번 판 광팔이(광값 '+gwCount(g, i)+'개 정산됨)라 쉬는 사람이에요. 풀려면 광팔이 -로 먼저 되돌려 주세요'};
     var snap = JSON.stringify(g);
+    if (!on && g.admin && gwCount(g, i)) gwClear(g, i);
     if (!g.deadPick) g.deadPick = {};
     if (on) g.deadPick[i] = true; else { delete g.deadPick[i]; if (g.gpPick===i) delete g.gpPick; if (g.gpAutoDead===i) delete g.gpAutoDead; }
     try { var txts = resettle(g, now); } catch(e){ restoreG(g, snap); return {ok:false, msg:e.message}; }
@@ -831,16 +849,18 @@ var L = (function(){
   function gwStep(g, i, d, now){
     var p = g.players[i], recs = gwCurRecs(g);
     if (d>0){
-      if (g.gwangpal===false) return {ok:false, msg:'설정에서 광팔이 규칙이 꺼져 있어요'};
+      if (g.gwangpal===false && !g.admin) return {ok:false, msg:'설정에서 광팔이 규칙이 꺼져 있어요'};
       var act = g.players.filter(function(x){ return x.bal>0; }).length;
-      if (act<4) return {ok:false, msg:'광팔이는 잔액 있는 사람이 4명 이상일 때만 할 수 있어요'};
-      if (p.bal<=0) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 광을 팔 수 없어요. 먼저 충전해 주세요'};
+      if (act<4 && !g.admin) return {ok:false, msg:'광팔이는 잔액 있는 사람이 4명 이상일 때만 할 수 있어요'};
+      if (p.bal<=0 && !g.admin) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 광을 팔 수 없어요. 먼저 충전해 주세요'};
       if (restFull(g, i)) return {ok:false, msg:'이번 판은 이미 죽은 사람이 있어요. 죽은 사람이 있으면 광팔이는 없어요. 죽음 체크를 먼저 풀어 주세요'};
-      if (curSeon(g)===i) return {ok:false, msg:p.name+' 님은 이번 판 선이에요. 선은 광팔이가 될 수 없어요 (선을 바꾸려면 판 끝 화면에서 선을 고르세요)'};
-      if ((g.pkPick||{})[i]) return {ok:false, msg:p.name+' 님은 이번 판 뻑을 먹었어요. 광팔이는 치지 않으니 뻑을 먼저 -로 되돌려 주세요'};
+      if (curSeon(g)===i && !g.admin) return {ok:false, msg:p.name+' 님은 이번 판 선이에요. 선은 광팔이가 될 수 없어요 (선을 바꾸려면 판 끝 화면에서 선을 고르세요)'};
+      if ((g.pkPick||{})[i] && !g.admin) return {ok:false, msg:p.name+' 님은 이번 판 뻑을 먹었어요. 광팔이는 치지 않으니 뻑을 먼저 -로 되돌려 주세요'};
       var other = recs.filter(function(r){ return r.i!==i; })[0];
-      if (other) return {ok:false, msg:'이번 판 광팔이는 이미 '+g.players[other.i].name+' 님이에요 (광값 '+gwCount(g, other.i)+'개). 바꾸려면 '+g.players[other.i].name+' 님 광팔이 -로 먼저 되돌려 주세요'};
-      var each = gwangPriceOf(g), snap = JSON.stringify(g), oldGp = g.gpPick; g.gpPick = i;
+      if (other && !g.admin) return {ok:false, msg:'이번 판 광팔이는 이미 '+g.players[other.i].name+' 님이에요 (광값 '+gwCount(g, other.i)+'개). 바꾸려면 '+g.players[other.i].name+' 님 광팔이 -로 먼저 되돌려 주세요'};
+      var each = gwangPriceOf(g), snap = JSON.stringify(g);
+      if (g.admin){ if (other) gwClear(g, other.i); if (g.gpPick!==undefined && g.gpPick!==null && g.gpPick!==i){ var og = g.gpPick; delete g.gpPick; if (g.gpAutoDead===og){ if (g.deadPick) delete g.deadPick[og]; delete g.gpAutoDead; } } }
+      var oldGp = g.gpPick; g.gpPick = i;
       // 광팔이는 쉬는 사람 = 죽음(쉼) 체크와 같은 취급. 자동으로 체크하고, 광값을 모두 되돌리면 자동으로 풀어 줌
       if (!g.deadPick) g.deadPick = {}; if (!g.deadPick[i]){ g.deadPick[i] = true; g.gpAutoDead = i; }
       var sd = syncDead(g, now); if (!sd.ok){ restoreG(g, snap); return {ok:false, msg:sd.msg}; }
@@ -852,9 +872,9 @@ var L = (function(){
     }
     var mine = recs.filter(function(r){ return r.i===i; }), last = mine[mine.length-1];
     if (!last) return {ok:false, msg:p.name+' 님은 이번 판에 되돌릴 광값이 없어요'};
-    if (p.bal < last.total) return {ok:false, msg:p.name+' 님이 광값으로 받은 돈을 이미 써서 되돌릴 수 없어요'};
+    if (p.bal < last.total && !g.admin) return {ok:false, msg:p.name+' 님이 광값으로 받은 돈을 이미 써서 되돌릴 수 없어요'};
     var snapM = JSON.stringify(g), relaxed = false;
-    last.to.forEach(function(x){ g.players[x.i].bal += x.pay; }); p.bal -= last.total;
+    if (p.bal < last.total) giveBack(g, i, last.to); else { last.to.forEach(function(x){ g.players[x.i].bal += x.pay; }); p.bal -= last.total; }
     g.gws.splice(g.gws.indexOf(last), 1); g.gwCur.splice(g.gwCur.indexOf(last.id), 1);
     if (!gwCount(g, i)){ if (g.gpPick===i){ delete g.gpPick; relaxed = true; } if (g.gpAutoDead===i){ if (g.deadPick) delete g.deadPick[i]; delete g.gpAutoDead; relaxed = true; } }
     g.log.unshift({t:'광값', r:g.round+1, txt:p.name+' 광팔이 '+last.n+'개째 환불 (+'+won(last.total)+' 되돌림: '+last.to.map(function(x){ return g.players[x.i].name+' '+won(x.pay); }).join(', ')+')'});
@@ -870,18 +890,19 @@ var L = (function(){
     var p = g.players[i]; if (!p) return {ok:false};
     if (on){
       if (g.gpPick===i && (g.deadPick||{})[i]) return {ok:true, already:true};
-      if (g.gwangpal===false) return {ok:false, msg:'설정에서 광팔이 규칙이 꺼져 있어요'};
+      if (g.gwangpal===false && !g.admin) return {ok:false, msg:'설정에서 광팔이 규칙이 꺼져 있어요'};
       var act = g.players.filter(function(x){ return x.bal>0; }).length;
-      if (act<4) return {ok:false, msg:'광팔이는 잔액 있는 사람이 4명 이상일 때만 할 수 있어요'};
-      if (p.bal<=0) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 광을 팔 수 없어요. 먼저 충전해 주세요'};
+      if (act<4 && !g.admin) return {ok:false, msg:'광팔이는 잔액 있는 사람이 4명 이상일 때만 할 수 있어요'};
+      if (p.bal<=0 && !g.admin) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 광을 팔 수 없어요. 먼저 충전해 주세요'};
       if (restFull(g, i)) return {ok:false, msg:'이번 판은 이미 죽은 사람이 있어요. 죽은 사람이 있으면 광팔이는 없어요. 죽음 체크를 먼저 풀어 주세요'};
-      if (curSeon(g)===i) return {ok:false, msg:p.name+' 님은 이번 판 선이에요. 선은 광팔이가 될 수 없어요 (선을 바꾸려면 판 끝 화면에서 선을 고르세요)'};
-      if ((g.pkPick||{})[i]) return {ok:false, msg:p.name+' 님은 이번 판 뻑을 먹었어요. 광팔이는 치지 않으니 뻑을 먼저 -로 되돌려 주세요'};
+      if (curSeon(g)===i && !g.admin) return {ok:false, msg:p.name+' 님은 이번 판 선이에요. 선은 광팔이가 될 수 없어요 (선을 바꾸려면 판 끝 화면에서 선을 고르세요)'};
+      if ((g.pkPick||{})[i] && !g.admin) return {ok:false, msg:p.name+' 님은 이번 판 뻑을 먹었어요. 광팔이는 치지 않으니 뻑을 먼저 -로 되돌려 주세요'};
       var recs = gwCurRecs(g);
       var other = recs.filter(function(r){ return r.i!==i; })[0];
-      if (other) return {ok:false, msg:'이번 판 광팔이는 이미 '+g.players[other.i].name+' 님이에요 (광값 '+gwCount(g, other.i)+'개). 바꾸려면 '+g.players[other.i].name+' 님 광팔이 -로 먼저 되돌려 주세요'};
-      if (g.gpPick!==undefined && g.gpPick!==null && g.gpPick!==i) return {ok:false, msg:'이번 판 광팔이는 이미 '+g.players[g.gpPick].name+' 님이에요. 바꾸려면 그 사람 광팔이 죽음을 먼저 풀어 주세요'};
+      if (other && !g.admin) return {ok:false, msg:'이번 판 광팔이는 이미 '+g.players[other.i].name+' 님이에요 (광값 '+gwCount(g, other.i)+'개). 바꾸려면 '+g.players[other.i].name+' 님 광팔이 -로 먼저 되돌려 주세요'};
+      if (g.gpPick!==undefined && g.gpPick!==null && g.gpPick!==i && !g.admin) return {ok:false, msg:'이번 판 광팔이는 이미 '+g.players[g.gpPick].name+' 님이에요. 바꾸려면 그 사람 광팔이 죽음을 먼저 풀어 주세요'};
       var snap = JSON.stringify(g);
+      if (g.admin){ if (other) gwClear(g, other.i); if (gwCount(g, i)) gwClear(g, i); if (g.gpPick!==undefined && g.gpPick!==null && g.gpPick!==i){ var og = g.gpPick; delete g.gpPick; if (g.gpAutoDead===og){ if (g.deadPick) delete g.deadPick[og]; delete g.gpAutoDead; } } }
       g.gpPick = i;
       if (!g.deadPick) g.deadPick = {};
       g.deadPick[i] = true;
@@ -890,9 +911,10 @@ var L = (function(){
       try { sd.resettled = (sd.resettled||[]).concat(resettle(g, now)); } catch(e){ restoreG(g, snap); return {ok:false, msg:e.message}; }
       return {ok:true, resettled:sd.resettled, cleared:sd.cleared};
     }
-    if (gwCount(g, i)) return {ok:false, msg:p.name+' 님은 이번 판 광팔이(광값 '+gwCount(g, i)+'개 정산됨)라 쉬는 사람이에요. 풀려면 광팔이 -로 먼저 되돌려 주세요'};
-    if (g.gpPick!==i && g.gpAutoDead!==i) return {ok:false, msg:p.name+' 님은 광팔이 죽음이 아니에요'};
+    if (gwCount(g, i) && !g.admin) return {ok:false, msg:p.name+' 님은 이번 판 광팔이(광값 '+gwCount(g, i)+'개 정산됨)라 쉬는 사람이에요. 풀려면 광팔이 -로 먼저 되돌려 주세요'};
+    if (g.gpPick!==i && g.gpAutoDead!==i && !gwCount(g, i)) return {ok:false, msg:p.name+' 님은 광팔이 죽음이 아니에요'};
     var snapM = JSON.stringify(g);
+    if (g.admin && gwCount(g, i)){ var gwWas = g.gpAutoDead===i; gwClear(g, i); if (!gwWas && g.deadPick) delete g.deadPick[i]; }
     if (g.gpPick===i) delete g.gpPick;
     if (g.gpAutoDead===i){ if (g.deadPick) delete g.deadPick[i]; delete g.gpAutoDead; }
     else if (g.deadPick) delete g.deadPick[i];
@@ -983,7 +1005,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {syncGwang:syncGwang,adminSet:adminSet,EVENTS:EVENTS,eventApply:eventApply,evsFix:evsFix,evRecPayer:evRecPayer,evCancel:evCancel,evTitle:evTitle,totalCounts:totalCounts,tiersOf:tiersOf,tierPpp:tierPpp,nextTier:nextTier,syncPpp:syncPpp,allIn:allIn,roundTouched:roundTouched,restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,gpDead:gpDead,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {gwClear:gwClear,giveBack:giveBack,takeBack:takeBack,syncGwang:syncGwang,adminSet:adminSet,EVENTS:EVENTS,eventApply:eventApply,evsFix:evsFix,evRecPayer:evRecPayer,evCancel:evCancel,evTitle:evTitle,totalCounts:totalCounts,tiersOf:tiersOf,tierPpp:tierPpp,nextTier:nextTier,syncPpp:syncPpp,allIn:allIn,roundTouched:roundTouched,restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,gpDead:gpDead,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -1153,7 +1175,7 @@ function renderMain(){
     flash='<div class="flash">'+esc(g.players[lc.i].name)+' +'+W(lc.amt)+' 충전 완료 (잔액 '+W(g.players[lc.i].bal)+')'+
       (L.canUndoCharge(g,lc.id)?'<button class="b3 small" onclick="cancelCharge('+lc.id+')">방금 충전 취소</button>':'')+'</div>';
   }
-  var h=(g.admin?'<div class="flash" style="background:#b00020">관리자 모드 — 자유 수정 (규칙 검사 꺼짐)</div>'+adminHtml():'')+evHtml()+dashHtml()+flash+'<div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
+  var h=(g.admin?'<div class="flash" style="background:#b00020">관리자 모드 — 모든 규칙 검사 꺼짐 (어떤 버튼이든 누를 수 있어요)</div>'+adminHtml():'')+evHtml()+dashHtml()+flash+'<div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
   g.players.forEach(function(p,i){
     var out=p.bal<=0;
     var dOn=(g.deadPick||{})[i]&&!out;
@@ -1192,8 +1214,8 @@ function gwStepUI(i,d){
 }
 function gpDeadUI(i){
   var hasGw=L.gwCount(g,i)>0, already=g.gpPick===i && (g.deadPick||{})[i], on=!already || hasGw;
-  if (already && hasGw){ alert(g.players[i].name+' 님은 이번 판 광팔이(광값 '+L.gwCount(g,i)+'개 정산됨)라 쉬는 사람이에요. 풀려면 광팔이 -로 먼저 되돌려 주세요'); return; }
-  if (already && !hasGw) on=false;
+  if (already && hasGw && !g.admin){ alert(g.players[i].name+' 님은 이번 판 광팔이(광값 '+L.gwCount(g,i)+'개 정산됨)라 쉬는 사람이에요. 풀려면 광팔이 -로 먼저 되돌려 주세요'); return; }
+  if (already && (!hasGw || g.admin)) on=false;
   var keep=st, tmp=JSON.stringify(g), r=L.gpDead(g,i,on);
   if (!r.ok){ if(r.msg) alert(r.msg); return; }
   if (r.already) return;
@@ -1213,7 +1235,7 @@ function gwBusy(){ return L.gwCurRecs(g).length>0; }
 // 카드 죽음 체크: 판 끝 화면의 죽은 사람 체크와 같은 상태(g.deadPick). 광값·뻑 낼 사람에서 빠짐
 // 이미 즉시 정산된 뻑·광값이 있으면 죽음 체크를 바꾸는 순간 자동 재정산(죽은 사람 몫 환불·재분배)
 // 카드 빈 곳 터치 = 죽음(쉼) 체크와 같음. 버튼·체크칸·글자 링크 등을 누른 건 무시
-function toggleAdmin(){ if(RO) return; if(!g.admin && !confirm('관리자 모드를 켤까요? 죽음·광팔이·선 규칙 검사가 꺼지고 잔액을 직접 고칠 수 있어요')) return; snap(); g.admin=!g.admin; g.log.unshift({t:'관리자', r:g.round, txt:'관리자 모드 '+(g.admin?'켬':'끔')}); render(); }
+function toggleAdmin(){ if(RO) return; if(!g.admin && !confirm('관리자 모드를 켤까요? 모든 규칙 검사가 꺼져서 어떤 버튼이든 누를 수 있고, 잔액도 직접 고칠 수 있어요. (이미 쓴 돈을 되돌릴 때는 잔액이 0원 아래로 내려가지 않게 남은 만큼만 되돌려요)')) return; snap(); g.admin=!g.admin; g.log.unshift({t:'관리자', r:g.round, txt:'관리자 모드 '+(g.admin?'켬':'끔')}); render(); }
 function adminHtml(){ var h='<div class="box" id="adminbox"><h2>관리자: 잔액 직접 수정</h2>';
   g.players.forEach(function(p,i){ h+='<div class="row"><b style="min-width:60px">'+esc(p.name)+'</b> 잔액 <input type="number" id="ab'+i+'" value="'+p.bal+'" style="width:30%"> 넣은 돈 <input type="number" id="ai'+i+'" value="'+p.invested+'" style="width:30%"></div>'; });
   h+='<p>선 강제 지정: '; g.players.forEach(function(p,i){ h+='<button class="pick small'+(g.seonPick===i?' on':'')+'" onclick="snap();g.seonPick='+i+';render()">'+esc(p.name)+'</button>'; });
@@ -1261,6 +1283,7 @@ function toggleDeadCard(i){
 function deadNote(sd){ return (sd.cleared&&sd.cleared.length ? '광팔이가 있으면 나머지는 모두 진행이라 죽음 체크('+sd.cleared.map(function(j){ return g.players[j].name; }).join('·')+')를 자동으로 풀었어요' : '')+(sd.resettled&&sd.resettled.length ? '. 자동 재정산: '+sd.resettled.join(' / ') : ''); }
 function toggleGpCard(i){
   var msg='', tmp0=JSON.stringify(g), fail=function(m){ g=JSON.parse(tmp0); alert(m); render(); };
+  if (g.admin && gwBusy()){ var wasGp=(g.gpPick===i); L.gwCurRecs(g).map(function(r){ return r.i; }).filter(function(v,k,a){ return a.indexOf(v)===k; }).forEach(function(j){ L.gwClear(g,j); }); if (wasGp) g.gpPick=i; }
   if (gwBusy() && g.gpPick!==i){ var o=L.gwCurRecs(g)[0]; alert('이번 판 광팔이는 이미 '+g.players[o.i].name+' 님이에요 (광값 정산됨). 바꾸려면 광팔이 -로 먼저 되돌려 주세요'); return render(); }
   if (gwBusy() && g.gpPick===i){ alert('광값이 이미 정산돼서 광팔이 체크를 풀 수 없어요. 광팔이 -로 먼저 되돌려 주세요'); return render(); }
   if (g.gpPick!==i && (g.deadPick||{})[i]){ var rd=L.setDead(g,i,false); if(!rd.ok) return fail(rd.msg); }
@@ -1269,7 +1292,7 @@ function toggleGpCard(i){
     var lv=(g.pkPick||{})[i]||0;
     if (lv){
       var rec=L.pkFind(g,(g.pkRec||{})[i]);
-      if (rec && !L.pkCanUndo(g,rec)) return fail(g.players[i].name+' 님은 '+L.PPEOK_NAMES[lv]+'으로 받은 돈을 이미 써서 되돌릴 수 없어요. 광팔이로 체크하지 않았어요');
+      if (rec && !L.pkCanUndo(g,rec) && !g.admin) return fail(g.players[i].name+' 님은 '+L.PPEOK_NAMES[lv]+'으로 받은 돈을 이미 써서 되돌릴 수 없어요. 광팔이로 체크하지 않았어요');
       while (((g.pkPick||{})[i]||0)>0){ if(!L.pkStep(g,i,-1).ok) break; }
       msg=g.players[i].name+' 님은 광팔이로 쉬어서 뻑을 먹을 수 없어요. '+L.PPEOK_NAMES[lv]+' 정산을 되돌렸어요';
     }
@@ -1287,7 +1310,7 @@ function pkLabel(i){ var ch=L.pkChains(g,i), c=ch[ch.length-1]; return c ? (c.le
 // 뻑 줄 아래: 이 사람 몇 번째 뻑(점수)인지 + 따로+ (연뻑이 끊긴 뒤 다시 한 뻑)
 function pkDetail(i, cls){ var ch=L.pkChains(g,i); if (!ch.length) return '';
   return '<div class="pkdet">'+ch.map(L.pkChainText).join(' · ')+(ch.length>1?' = 합 '+ch.reduce(function(a,c){ return a+c.pts; },0)+'점':'')+
-    (ch.length<3?' <button class="pkb pksep '+(cls||'')+'" onclick="pkMarkUI('+i+',1,true)">따로+</button>':'')+'</div>'; }
+    (ch.length<3||g.admin?' <button class="pkb pksep '+(cls||'')+'" onclick="pkMarkUI('+i+',1,true)">따로+</button>':'')+'</div>'; }
 function pkStep(i,d){
   var lv=(g.pkPick||{})[i]||0, nx=Math.max(0, Math.min(3, lv+d));
   if (nx===lv) return;
@@ -1450,12 +1473,13 @@ function seatApply(){ var a=L.simpleSeat(g, st.seon, st.gpOn, g.deadPick||{}, g.
 function fixW(){ if (st.w!==undefined && (st.rest[st.w]||st.dead[st.w])) st.w=undefined; }
 function pickSeon(i){
   var t0=JSON.stringify(g);
-  if (L.gwCurRecs(g).some(function(r){ return r.i===i; })){ alert(g.players[i].name+' 님은 이번 판 광팔이(광값 정산됨)라 선이 될 수 없어요'); return render(); }
+  if (L.gwCurRecs(g).some(function(r){ return r.i===i; }) && !g.admin){ alert(g.players[i].name+' 님은 이번 판 광팔이(광값 정산됨)라 선이 될 수 없어요'); return render(); }
   g.seonPick=i; var rs=L.resync(g); if(!rs.ok){ g=JSON.parse(t0); alert(rs.msg); return render(); }
   if (rs.resettled.length) prev=t0;
   st.seon=i; seatApply(); render(); if (rs.resettled.length) alert('자동 재정산: '+rs.resettled.join(' / '));
 }
 function setGp(on){
+  if(!on && gwBusy() && g.admin){ var tg=JSON.stringify(g); L.gwCurRecs(g).map(function(r){ return r.i; }).filter(function(v,k,a){ return a.indexOf(v)===k; }).forEach(function(j){ L.gwClear(g,j); }); prev=tg; }
   if(!on && gwBusy()){ alert('광값이 이미 정산돼서 광팔이를 끌 수 없어요. 광팔이 -로 먼저 되돌려 주세요'); return render(); }
   var note='';
   if (on && g.gwangpal!==false && actList().length>=4){ var tmp=JSON.stringify(g), sd=L.syncDead(g,0,true); if(!sd.ok){ alert(sd.msg); return render(); } if (sd.cleared.length){ prev=tmp; note=deadNote(sd); } }
@@ -1483,7 +1507,7 @@ function renderS1(){
     if (st.conflict==='notLast') h+='<p class="note gpnote">카드에서 광팔이로 체크한 '+nm(gpWho)+' 님은 이 순서의 마지막 주자('+nm(last)+')가 아니에요. 체크한 대로 '+nm(gpWho)+' 님이 쉬고 나머지는 모두 쳐요. 맞지 않으면 선을 바꾸거나 체크를 풀어 주세요.</p>';
     if (st.conflict==='seon') h+='<p class="warn gpnote">카드에서 광팔이로 체크한 '+nm(g.gpPick)+' 님이 선이에요. 선은 광팔이가 될 수 없어요. 선을 바꾸거나 광팔이 체크를 풀어 주세요.</p>';
   } else if (g.gpPick!==undefined && g.players[g.gpPick]) h+='<p class="note gpnote">카드에서 '+nm(g.gpPick)+' 님을 광팔이로 체크했지만, 광팔이는 잔액 있는 사람이 4명 이상이고 광팔이 규칙이 켜져 있을 때만 적용돼요. 이번 판은 광팔이 없이 진행해요.</p>';
-  var cand=o.slice(1).filter(function(i){ return !st.rest[i]; }); // 선·광팔이 빼고 누구나 죽음 가능 (광팔이와 함께 가능)
+  var cand=(g.admin?o:o.slice(1)).filter(function(i){ return !st.rest[i]; }); // 선·광팔이 빼고 누구나 죽음 가능 (광팔이와 함께 가능)
   if (cand.length){
     h+='<p><b>죽은(쉬는) 사람</b> (카드의 죽음(쉼) 체크와 같아요. 체크하면 광팔이 자동 쉼은 꺼져요)</p>';
     cand.forEach(function(i){ h+='<label class="ck"><input type="checkbox" class="deadck" '+(st.dead[i]?'checked':'')+((!g.admin&&((g.prevDead||{})[i]||(!st.dead[i]&&L.restFull(g,i))))?' disabled':'')+' onchange="toggleDead('+i+')">'+nm(i)+' 죽음'+((g.prevDead||{})[i]?' (직전 판에 죽음: 이번 판 죽음 불가)':'')+'</label>'; });
@@ -1505,7 +1529,7 @@ function renderS1(){
 }
 function checkS1(){
   var rp=L.roundPlayers(g, st.rest, st.dead);
-  if (st.conflict==='seon'){ alert('선은 광팔이가 될 수 없어요. 선을 바꾸거나 광팔이 체크를 풀어 주세요'); return null; }
+  if (st.conflict==='seon' && !g.admin){ alert('선은 광팔이가 될 수 없어요. 선을 바꾸거나 광팔이 체크를 풀어 주세요'); return null; }
   if (!rp.ok && !(g.admin && rp.play.length>=2)){ alert(rp.play.length>3 ? '치는 사람은 3명까지예요. 광팔이나 안 치는 사람을 골라 주세요' : '치는 사람이 2명 이상이어야 해요'); return null; }
   if (st.w===undefined || rp.play.indexOf(st.w)<0){ alert('이긴 사람을 골라 주세요'); return null; }
   var losers=rp.play.filter(function(i){return i!==st.w;});
@@ -1636,7 +1660,7 @@ function applyIt(){
   var evq=g.evNow&&L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0];
   if (evq && st.evWin===undefined) return alert('이벤트 '+evq.title+': 성공한 사람이나 「아무도 못 함」을 골라 주세요');
   var evw=st.evWin, evOut=Object.assign({}, st.dead||{}, st.rest||{});
-  if (evw>=0 && evOut[evw]) return alert('죽은 사람·광팔이는 이벤트 성공자가 될 수 없어요');
+  if (evw>=0 && evOut[evw] && !g.admin) return alert('죽은 사람·광팔이는 이벤트 성공자가 될 수 없어요');
   var r=curRes(); snap();
   var rn=Object.keys(st.rest||{}).map(function(i){return g.players[i].name;});
   var dn=Object.keys(st.dead||{}).map(function(i){return g.players[i].name;});
