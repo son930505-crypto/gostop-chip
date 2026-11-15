@@ -133,6 +133,12 @@ select{font-size:16px;padding:10px;border-radius:10px;background:#0f1a14;color:#
 }
 /* ---------- 마감 요약 · 지난 기록 ---------- */
 .tb.cl{background:#7a2a1e;color:#fff;font-weight:800}
+/* 관리자 모드 (고스톱·맞고와 같은 방식: 버튼 → 확인창으로 켜고, 다시 누르면 끔) */
+.tb.ad{background:#3a2440;color:#eef}.tb.ad.on{background:#b00020;color:#fff;font-weight:800}
+.adminbar{flex:1;min-width:0;background:#b00020;color:#fff;font-size:1.9vh;font-weight:700;padding:.5vh .8vw;border-radius:8px;display:flex;align-items:center;gap:.8vw}
+.adminbar span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.admin-on .top .lastlog{display:none}.adminbar button{font-size:2vh;padding:.7vh 1vw;background:#fff;color:#b00020;font-weight:800;white-space:nowrap}
+.admrow{display:flex;align-items:center;gap:1vw;margin:.8vh 0;font-size:2.2vh}.admrow b{min-width:8em}.admrow input{font-size:2.4vh;padding:.8vh .8vw;width:8em;border-radius:10px;border:1px solid #3a5a48;background:#0f1a14;color:#fff}
+@media(max-aspect-ratio:1/1){.adminbar{font-size:12px;padding:4px 6px}.adminbar button{font-size:11px;padding:4px 6px}.admrow{font-size:15px}.admrow input{font-size:16px;padding:8px}}
 .view{height:100vh;display:flex;flex-direction:column;padding:1.5vh 1.5vw;gap:1.2vh;overflow:hidden}
 .sh{flex:0 0 auto}
 .st{font-size:4vh;font-weight:800;color:#f2c14e}
@@ -240,6 +246,8 @@ select{font-size:16px;padding:10px;border-radius:10px;background:#0f1a14;color:#
 .rkr.up em,.rkr.up small{color:#7fe0a0}
 .rkr.dn em,.rkr.dn small{color:#ff9f7a}
 .chiprk .rkr em{font-size:2.2vh;white-space:nowrap}
+.trrk{flex:0 0 auto;font-size:2.2vh;color:#ffe;background:#2a2a14;border:1px solid #f2c14e;border-radius:10px;padding:.8vh 1vw;margin-bottom:.8vh}.trrk b{color:#f2c14e;margin-right:.6vw}.trrk em{font-style:normal;font-weight:800;color:#7fe0a0}
+@media(max-aspect-ratio:1/1){.trrk{font-size:13px;padding:6px 8px}.admin-on .top{flex-wrap:wrap}.adminbar{flex:1 1 100%;order:99}}
 .chiprk .rkr small{width:auto;min-width:7vw;font-size:2.2vh;font-weight:800}
 .betinfo{display:flex;flex-direction:column;gap:.5vh}
 @media(max-aspect-ratio:1/1){
@@ -313,10 +321,12 @@ select{font-size:16px;padding:10px;border-radius:10px;background:#0f1a14;color:#
     <div class="gt" id="gtLabel"></div>
     <div class="rd" id="rdLabel"></div>
     <div class="lastlog" id="log"></div>
+    <div class="adminbar hide" id="adminbar"><span title="관리자 모드 — 모든 규칙 검사 꺼짐 (어떤 버튼이든 누를 수 있어요)">관리자 모드 · 규칙 검사 꺼짐</span><button onclick="openAdmin()">칩 수정·선</button></div>
     <button class="tb fs fsx" onclick="fsToggle()">⛶ 전체화면</button>
     <button class="tb re" onclick="openReplay()">재경기</button>
     <button class="tb un" onclick="undo()">↶ 되돌리기</button>
     <button class="tb" onclick="openJudge()">판정기</button>
+    <button class="tb ad" id="adminbtn" onclick="toggleAdmin()">관리자 모드</button>
     <button class="tb" onclick="openSettings()">설정</button>
     <button class="tb cl" onclick="closeSession()">마감</button>
   </div>
@@ -428,7 +438,32 @@ function handChoices(opt){
   if(opt.sp){r.push({key:'amhaeng',name:'암행어사',s:1});r.push({key:'ttj',name:'땡잡이',s:1});}
   return r;
 }
-if(typeof module!=='undefined') module.exports={KUT_EX:KUT_EX,KUT_NAME:KUT_NAME,DECK:DECK,evalHand:evalHand,resolve:resolve,combos3:combos3,handTable:handTable,handChoices:handChoices,GAME_TYPES:GAME_TYPES};
+/* 마감 정산 (누가 누구에게): 고스톱 앱 settle과 같은 순서.
+   세훈(송세·송세훈) 낼 돈은 되도록 미경에게 먼저 → 금액 같은 쌍 → 큰 금액끼리. nets: {이름: 손익(원)} */
+function settleTransfers(names,nets){
+  var cred=[],debt=[],tr=[];
+  names.forEach(function(n){var v=nets[n]||0; if(v>0)cred.push({n:n,v:v}); else if(v<0)debt.push({n:n,v:-v});});
+  var is=function(n,re){return re.test(String(n||'').replace(/\s/g,''));};
+  debt.forEach(function(d){ if(!(d.v>0)||!is(d.n,/^(세훈|송세|송세훈)$/)) return;
+    cred.forEach(function(c){ if(d.v>0&&c.v>0&&is(c.n,/^미경$/)){var a=Math.min(c.v,d.v); tr.push({from:d.n,to:c.n,amt:a}); c.v-=a; d.v-=a;} }); });
+  debt.forEach(function(d){ var c=cred.find(function(c){return c.v===d.v&&c.v>0;}); if(c&&d.v>0){ tr.push({from:d.n,to:c.n,amt:d.v}); c.v=0; d.v=0; } });
+  while(true){ cred.sort(function(a,b){return b.v-a.v;}); debt.sort(function(a,b){return b.v-a.v;});
+    if(!cred.length||!debt.length||cred[0].v<=0||debt[0].v<=0) break;
+    var a=Math.min(cred[0].v,debt[0].v); tr.push({from:debt[0].n,to:cred[0].n,amt:a}); cred[0].v-=a; debt[0].v-=a; }
+  return tr;
+}
+/* 충전금액 한도 (고스톱 마이너스 진행 규칙과 같음): 손익 = (남은 칩 - 시작 칩) x 칩값. 잃은 돈은 시작 칩(=충전금액)까지만 냄.
+   섯다는 베팅이 항상 가진 칩 한도(올인)라 칩이 0개 아래로 내려갈 일이 없어서 보통은 아무것도 안 바뀜.
+   (예전 저장분 등으로 칩이 0개 아래면) 부족분은 딴 사람들이 딴 금액 비율대로 덜 받음 — 섯다에는 0개 아래로 낸 돈 장부가 없어서 고스톱의 장부 없는 경우와 같은 방식 */
+function capNets(names,chips,startC,chipWon){
+  var rows=names.map(function(n){var c=chips[n]||0,raw=(c-startC)*chipWon;return {n:n,raw:raw,net:raw,short:0,cut:0,cutTo:[]};});
+  var shortT=0;
+  rows.forEach(function(d){ if(!(d.net< -startC*chipWon)) return; var S=-d.net-startC*chipWon; d.short=S; d.net=-startC*chipWon; shortT+=S;
+    var cr=rows.filter(function(r){return r.net>0;}), tot=cr.reduce(function(a,r){return a+r.net;},0), use=Math.min(S,tot), left=use;
+    cr.forEach(function(r,k){ var a=k===cr.length-1?left:Math.floor(use*r.net/tot); a=Math.min(a,left,r.net); if(a>0){ r.net-=a; r.cut+=a; left-=a; d.cutTo.push({n:r.n,amt:a}); } }); });
+  return {rows:rows,shortTotal:shortT};
+}
+if(typeof module!=='undefined') module.exports={capNets:capNets,settleTransfers:settleTransfers,KUT_EX:KUT_EX,KUT_NAME:KUT_NAME,DECK:DECK,evalHand:evalHand,resolve:resolve,combos3:combos3,handTable:handTable,handChoices:handChoices,GAME_TYPES:GAME_TYPES};
 //LOGIC-END
 
 /* 실사 화투 (Wikimedia Commons 'Hwatu' 세트, CC BY-SA 4.0) */
@@ -574,10 +609,11 @@ function endBetting(auto){
 }
 function betCheck(){
   var n=S.bet&&S.bet.current; if(!n||S.bet.phase!=='betting') return;
-  if(S.bet.maxStreet>0) return alert('이미 베팅이 있어서 체크할 수 없어요');
+  if(S.bet.maxStreet>0&&!S.admin) return alert('이미 베팅이 있어서 체크할 수 없어요');
+  var forced=S.bet.maxStreet>0&&callAmt(n)>0;
   snapBet();
   S.bet.acted[n]=true;
-  S.bet.log=n+' 체크';
+  S.bet.log=n+' 체크'+(forced?' (관리자: 콜 없이 넘김)':'');
   afterAction(); save(); renderDash();
 }
 function betCall(){
@@ -657,8 +693,8 @@ function undoBet(){
   save(); renderDash();
 }
 function onPlayerTap(i){
-  if(S.bet&&S.bet.phase==='betting') return;
-  if(S.bet&&S.bet.phase==='showdown'){
+  if(S.bet&&S.bet.phase==='betting'&&!S.admin) return;
+  if(S.bet&&S.bet.phase==='showdown'&&!S.admin){
     var name=S.players[i];
     if(S.bet.inPlay&&!S.bet.inPlay[name]) return alert('다이한 사람은 이길 수 없어요');
   }
@@ -670,7 +706,7 @@ function renderBetBar(){
   bar.className='betbar';
   var b=S.bet, n=b.current, showActs=b.phase==='betting'&&n;
   var need=n?callAmt(n):0, plan=n?halfPlan(n):{call:0,extra:0,total:0}, maxE=n?raiseMax(n):0;
-  var canCk=showActs&&b.maxStreet===0;
+  var canCk=showActs&&(b.maxStreet===0||!!S.admin);
   var canCl=showActs&&need>0;
   var canHf=showActs&&plan.total>0;
   var canRz=showActs&&maxE>0;
@@ -786,6 +822,8 @@ function renderDash(){
   $('jb').innerHTML=h;
   var lr=S.rounds[n-1];
   $('log').innerHTML=lr?('직전 '+lr.no+'판: '+(lr.winner?'<b>'+esc(lr.winner)+'</b> 승'+(lr.handName?' ('+esc(lr.handName)+')':'')+(lr.pot?(' · 판돈 '+chipTxt(lr.pot)):'') :'재경기 '+esc(lr.replay||''))):'이긴 사람 이름을 탭해서 기록';
+  var ab=$('adminbtn'); if(ab){ ab.textContent=S.admin?'관리자 모드 끄기':'관리자 모드'; ab.classList.toggle('on',!!S.admin); }
+  var abar=$('adminbar'); if(abar) abar.classList.toggle('hide',!S.admin); $('dash').classList.toggle('admin-on',!!S.admin);
   renderBetBar();
 }
 function nextSeon(winner){
@@ -825,8 +863,33 @@ function openWin(i){
   var hs=handChoices(S.opt);
   M('<h2>'+esc(name)+' 승리</h2><div class="hint">이긴 족보를 고르면 같이 기록돼요 (안 골라도 됨)</div><div class="hg">'+
     hs.map(function(h,k){return '<button class="hb'+(h.s?' s':'')+'" id="hb'+k+'" onclick="pickH('+k+')">'+h.name+'</button>';}).join('')+
-    '</div><div class="mrow"><button class="no" onclick="closeM()">취소</button><button class="ok" onclick="confirmWin('+i+')">'+esc(name)+' 승 기록</button></div>');
+    '</div>'+(canTurn(name)?'<div class="hg"><button class="hb s" id="turnbtn" onclick="setTurn('+i+')">관리자: 차례를 '+esc(name)+'(으)로</button></div>':'')+
+    '<div class="mrow"><button class="no" onclick="closeM()">취소</button><button class="ok" onclick="confirmWin('+i+')">'+esc(name)+' 승 기록</button></div>');
 }
+/* ---------- 관리자 모드 ---------- */
+// 켜면 규칙 검사(차례 순서·베팅 있을 때 체크·다이한 사람 승리·베팅 중 승리 기록·베팅 끝난 뒤 다시 베팅)가 꺼짐.
+// 칩은 버튼으로 움직일 때 항상 잔액 한도 안(0개 아래 없음), 칩 합계(각자 칩 + 판돈)는 그대로. 칩 직접 수정만 합계를 바꿈
+function toggleAdmin(){ if(!S) return; if(!S.admin&&!confirm('관리자 모드를 켤까요? 모든 규칙 검사가 꺼져서 어떤 버튼이든 누를 수 있고, 칩도 직접 고칠 수 있어요. (칩은 0개 아래로 내려가지 않아요)')) return;
+  S.admin=!S.admin; if(S.bet) S.bet.log='관리자 모드 '+(S.admin?'켬':'끔'); save(); closeM(); renderDash(); }
+function canTurn(name){ var b=S&&S.bet; return !!(S&&S.admin&&b&&b.inPlay[name]&&!b.allIn[name]&&!(b.phase==='betting'&&b.current===name)); }
+function setTurn(i){ var name=S.players[i]; if(!canTurn(name)) return;
+  snapBet(); S.bet.phase='betting'; S.bet.current=name; S.bet.acted[name]=false; S.bet.log='관리자: 차례 → '+name; save(); closeM(); renderDash(); }
+function openAdmin(){ if(!S||!S.admin) return;
+  M('<h2>관리자: 칩 직접 수정</h2><div class="hint">숫자를 고치고 [칩 적용]을 누르세요 (1개 = '+won(1)+'). 판돈은 그대로예요. 이전 행동 취소로 되돌릴 수 있어요</div>'+
+    S.players.map(function(n,i){return '<div class="admrow"><b>'+esc(n)+'</b>칩 <input type="number" id="ac'+i+'" min="0" step="1" inputmode="numeric" value="'+chipsOf(n)+'"> 개</div>';}).join('')+
+    '<div class="hint" style="margin-top:1.2vh">선 강제 지정</div><div class="hg">'+S.players.map(function(n,i){return '<button class="hb'+(S.seon===n?' on':'')+'" onclick="adminSeon('+i+')">'+esc(n)+'</button>';}).join('')+'</div>'+
+    '<div class="mrow"><button class="no" onclick="closeM()">닫기</button><button class="ok" onclick="adminSave()">칩 적용</button></div>'); }
+function adminSeon(i){ if(!S||!S.admin) return; S.seon=S.players[i]; if(S.bet) S.bet.log='관리자: 선 → '+S.seon; save(); renderDash(); openAdmin(); }
+function adminSave(){ if(!S||!S.admin) return; var vals=[], bad=false;
+  S.players.forEach(function(n,i){ var el=$('ac'+i), v=el?Number(el.value):NaN; if(!el||el.value===''||!isFinite(v)) bad=true; vals.push(Math.max(0,Math.floor(v))); });
+  if(bad) return alert('칩 개수(숫자)를 확인해 주세요');
+  var ch=[]; S.players.forEach(function(n,i){ if(vals[i]!==chipsOf(n)) ch.push(n+' '+chipsOf(n)+'→'+vals[i]+'개'); });
+  if(!ch.length){ closeM(); return; }
+  if(S.bet) snapBet();
+  S.players.forEach(function(n,i){ S.chips[n]=vals[i]; if(S.bet&&S.bet.inPlay[n]) S.bet.allIn[n]=vals[i]<=0; });
+  if(S.bet){ S.bet.log='관리자 수정: '+ch.join(', ');
+    if(S.bet.phase==='betting'&&S.bet.current&&S.bet.allIn[S.bet.current]) afterAction(); }
+  save(); closeM(); renderDash(); alert(ch.length+'명 수정했어요'); }
 function pickH(k){var hs=handChoices(S.opt); pick=(pick===k?null:k); hs.forEach(function(_,j){var b=$('hb'+j); if(b) b.classList.toggle('on',j===pick);});}
 function confirmWin(i){var hs=handChoices(S.opt),h=pick!==null?hs[pick]:null; record(S.players[i],h&&h.key,h&&h.name);}
 function openReplay(){
@@ -874,13 +937,17 @@ function showSummary(ss,mode){
   var real=ss.rounds.filter(function(r){return r.winner;}).length, rep=ss.rounds.length-real;
   var rank=ss.players.map(function(n){return {n:n,w:ss.rounds.filter(function(r){return r.winner===n;}).length};}).sort(function(a,b){return b.w-a.w;});
   var pr=null,place=0;
-  var chipBlock='';
+  var chipBlock='', trLine='';
   if(ss.chips){ var startC=ss.startChips||START_CHIPS;
     chipBlock='<div class="rk chiprk">'+ss.players.map(function(n){
       var c=ss.chips[n]||0,d=c-startC,cls=d>0?'up':(d<0?'dn':'ev');
       var ds=(d>0?'+':'')+(d*CHIP_WON).toLocaleString('ko-KR')+'원';
       return '<div class="rkr '+cls+'"><span>칩</span><b>'+esc(n)+'</b><em>'+chipTxt(c)+'</em><small>'+ds+'</small></div>';
-    }).join('')+'</div>'; }
+    }).join('')+'</div>';
+    var cap=capNets(ss.players,ss.chips,startC,CHIP_WON), nets={}; cap.rows.forEach(function(r){nets[r.n]=r.net;});
+    var trs=settleTransfers(ss.players,nets);
+    if(trs.length) trLine='<div class="trrk"><b>정산 (누가 누구에게)</b> '+trs.map(function(t){return esc(t.from)+' → '+esc(t.to)+' <em>'+t.amt.toLocaleString('ko-KR')+'원</em>';}).join(' · ')+'</div>';
+    if(cap.shortTotal) trLine+='<div class="trrk capnote">충전금액 한도: '+cap.rows.filter(function(r){return r.short;}).map(function(r){return esc(r.n)+' '+(startC*CHIP_WON).toLocaleString('ko-KR')+'원까지만 냄 (부족분 '+r.short.toLocaleString('ko-KR')+'원'+(r.cutTo.length?': '+r.cutTo.map(function(c){return esc(c.n)+' '+c.amt.toLocaleString('ko-KR')+'원';}).join(', ')+' 덜 받음':'')+')';}).join(' · ')+'</div>'; }
   var rk=rank.map(function(x,i){ if(x.w!==pr){place=i+1;pr=x.w;} return '<div class="rkr'+(place===1&&x.w>0?' top':'')+'"><span>'+place+'위</span><b>'+esc(x.n)+'</b><em>'+x.w+'승</em><small>'+(real?Math.round(x.w*100/real):0)+'%</small></div>';}).join('');
   var list=ss.rounds.map(function(r){
     return '<div class="rr'+(r.winner?'':' rp')+'"><span class="rn">'+r.no+'판</span> '+(r.winner?'<b>'+esc(r.winner)+'</b> 승 · '+(r.handName?esc(r.handName):'<i>족보 미선택</i>'):'<b class="rpw">재경기</b> · '+esc(r.replay||'사유 없음'))+' · 선 '+esc(r.seon||'-')+' · '+fTime(r.t)+'</div>';}).join('');
@@ -894,7 +961,7 @@ function showSummary(ss,mode){
       '<div class="kpi"><div class="wide"><b>'+fDur(ss.end-ss.start)+'</b><small>경과 시간 ('+fTime(ss.start)+' 시작 → '+fTime(ss.end)+' 마감)</small></div></div>'+
       '<div class="pp">참가자 '+ss.players.length+'명: '+ss.players.map(esc).join(', ')+'</div>'+
       '<div class="rk">'+rk+'</div>'+chipBlock+'</div>'+
-    '<div class="sr"><div class="srh">판별 기록 ('+ss.rounds.length+'판)</div><div class="rl" style="'+rlStyle(ss.rounds.length)+'">'+(list||'<div class="rr">기록 없음</div>')+'</div></div></div>'+
+    '<div class="sr">'+trLine+'<div class="srh">판별 기록 ('+ss.rounds.length+'판)</div><div class="rl" style="'+rlStyle(ss.rounds.length)+'">'+(list||'<div class="rr">기록 없음</div>')+'</div></div></div>'+
     '<div class="mrow sbt">'+btns+'</div>';
   showView('sumv');
 }
