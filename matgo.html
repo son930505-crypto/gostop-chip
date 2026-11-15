@@ -426,7 +426,7 @@ var L = (function(){
   }
   // ===== 맞고 정식: 첫뻑 7점, 연뻑(2연뻑) 14점, 첫따닥 7점을 상대에게서 바로 받음 (점수 x 지금 점당, 상대 잔액 한도) =====
   var MBONUS = {pk1:{name:'첫뻑', pts:7}, pk2:{name:'연뻑', pts:14}, tt1:{name:'첫따닥', pts:7}};
-  function mbonusFrom(g, i){ for (var j=0;j<g.players.length;j++) if (j!==i && live(g, j)) return j; return -1; }
+  function mbonusFrom(g, i){ for (var j=0;j<g.players.length;j++) if (j!==i && live(g, j)) return j; if (g.admin) for (var k=0;k<g.players.length;k++) if (k!==i) return k; return -1; }
   function mbonus(g, i, kind, now){
     var b = MBONUS[kind], p = g.players[i]; if (!b || !p) return {ok:false};
     if (!live(g, i) && !g.admin) return {ok:false, msg:p.name+' 님은 잔액이 0원이에요. 먼저 충전해 주세요'};
@@ -474,7 +474,7 @@ var L = (function(){
     return (p?p.name:'?')+' 벌금 -'+won(f.total)+' ('+f.to.map(function(x){ return nm(x.i); }).join('·')+' +각 '+won(f.each)+(cap.length?', 잔액 부족: '+cap.map(function(x){ return nm(x.i)+' '+won(x.pay)+'만'; }).join(', '):'')+')';
   }
   function fine(g, i, kind, now){
-    var f = finePreview(g, i, kind); if (!f.to.length || !live(g, i)) return null;
+    var f = finePreview(g, i, kind); if (!f.to.length || (!live(g, i) && !g.admin)) return null;
     if (!g.fines) g.fines = [];
     g.fineSeq = Math.max(g.fineSeq||0, g.fines.reduce(function(m,x){ return Math.max(m, x.id); }, 0)) + 1;
     var over = overOf(i, g.players[i].bal, f.to);
@@ -549,7 +549,7 @@ var L = (function(){
   function foolStep(g, i, d, now){
     var p = g.players[i]; if (!p) return {ok:false};
     if (d>0){
-      if (!live(g, i)) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 멍청이 돈을 낼 수 없어요. 먼저 충전해 주세요'};
+      if (!live(g, i) && !g.admin) return {ok:false, msg:p.name+' 님은 잔액이 0원이라 멍청이 돈을 낼 수 없어요. 먼저 충전해 주세요'};
       var each = foolAmtOf(g), to = [];
       g.players.forEach(function(x,j){ if (j===i || !live(g, j)) return; to.push({i:j, pay:each}); }); // 마이너스 진행: 모자라도 다 냄
       if (!to.length) return {ok:false, msg:'받을 사람(잔액 있는 다른 사람)이 없어요'};
@@ -696,8 +696,8 @@ var L = (function(){
       txt = '뻑 수정: '+nm(rec.i)+' '+PPEOK_NAMES[rec.level]+(rec.r?' ('+rec.r+'판)':'')+' - '+nm(j)+' 죽음 → '+won(pay)+' 돌려줌 ('+nm(rec.i)+' -'+won(pay)+')';
     } else {
       if (!isDead) return {ok:false};
-      var pay2 = Math.min(rec.each, Math.max(0, g.players[j].bal));
-      g.players[j].bal -= pay2; g.players[rec.i].bal += pay2; rec.to.push({i:j, pay:pay2}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay2;
+      var pay2 = g.admin ? rec.each : Math.min(rec.each, Math.max(0, g.players[j].bal));
+      g.players[j].bal -= pay2; g.players[rec.i].bal += pay2; rec.to.push({i:j, pay:pay2}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay2; if (g.admin) markNeg(g, [j]);
       rec.dead.splice(rec.dead.indexOf(j), 1);
       txt = '뻑 수정: '+nm(rec.i)+' '+PPEOK_NAMES[rec.level]+(rec.r?' ('+rec.r+'판)':'')+' - '+nm(j)+' 죽음 취소 → '+won(pay2)+' 다시 냄';
     }
@@ -719,9 +719,9 @@ var L = (function(){
       txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 빠짐 → '+won(pbk)+' 돌려줌'+(pbk<x.pay?' (관리자: 잔액 한도)':'');
     } else {
       if (x) return {ok:false, msg:nm(j)+' 님은 이미 낸 사람이에요'};
-      var pay = Math.min(rec.each, Math.max(0, g.players[j].bal));
+      var pay = g.admin ? rec.each : Math.min(rec.each, Math.max(0, g.players[j].bal));
       if (!pay) return {ok:false, msg: nm(j)+' 님은 잔액이 0원이라 낼 수 없어요'};
-      g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay;
+      g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay; if (g.admin) markNeg(g, [j]);
       var k = rec.dead.indexOf(j); if (k>=0) rec.dead.splice(k, 1);
       txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 추가 → '+won(pay)+' 냄';
     }
@@ -1280,7 +1280,7 @@ function fineMinus(i){
 }
 function doFine(i,kind){
   kind='fine'; var p=g.players[i], nm='';
-  if (!L.live(g,i)) return alert(p.name+' 님은 잔액이 0원이라 벌금을 낼 수 없어요. 먼저 충전해 주세요');
+  if (!L.live(g,i) && !g.admin) return alert(p.name+' 님은 잔액이 0원이라 벌금을 낼 수 없어요. 먼저 충전해 주세요');
   var pv=L.finePreview(g,i,kind);
   if (!pv.to.length) return alert('벌금을 받을 사람(잔액 있는 다른 사람)이 없어요');
   snap(); var rec=L.fine(g,i,kind);
