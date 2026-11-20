@@ -87,10 +87,12 @@ summary{font-size:21px;font-weight:700}
 /* 전체화면 버튼 */
 .fsbtn{width:auto;margin:0;padding:4px 10px;font-size:14px;line-height:1.2;font-weight:700;background:#1e3329;color:#bfe3cc;border:1px solid #3a5a48;border-radius:10px;white-space:nowrap;flex:none;cursor:pointer}
 .nofs .fsx{display:none!important}
+.ro #newgbtn,.ro .tbg,.nog .tbg{display:none!important}
+.fsbtn:disabled{opacity:.35}
 </style>
 </head>
 <body>
-<header><h1>고스톱 칩 관리</h1><div style="display:flex;align-items:center;gap:8px"><button type="button" class="fsbtn fsx" onclick="fsToggle()">⛶ 전체화면</button><span id="mult" class="tag hide"></span></div></header>
+<header><h1>고스톱 칩 관리</h1><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end"><button type="button" class="fsbtn fsx" onclick="fsToggle()">⛶ 전체화면</button><button type="button" class="fsbtn" id="newgbtn" style="background:#5a1e1e;color:#ffd6d6;border-color:#8a3a3a" onclick="resetAll()">↺ 새게임</button><button type="button" class="fsbtn tbg" id="logbtn" onclick="view='log';render()">📋 기록보기</button><button type="button" class="fsbtn tbg" id="ubtn" onclick="hUndo()">◀ 되돌리기</button><button type="button" class="fsbtn tbg" id="rbtn" onclick="hRedo()">다음 ▶</button><span id="mult" class="tag hide"></span></div></header>
 <div id="robar" class="robar hide"></div>
 <main id="app"></main>
 
@@ -246,12 +248,15 @@ var L = (function(){
   function ppeokName(level, n){ level = Math.floor(+level||0); return level>1 ? PPEOK_NAMES[level] : ((n||1)>1 ? '뻑' : PPEOK_NAMES[1]); }
   // 이번 판 그 사람의 뻑 묶음들: 앞서 끝난 묶음(g.pkDone[i]) + 지금 묶음(g.pkPick[i]). 묶음 = 한 번의 뻑(연뻑이면 이어진 것까지)
   function pkChains(g, i){
-    var done = ((g.pkDone||{})[i]||[]).slice(), cur = (g.pkPick||{})[i]||0, out = [];
+    var done = ((g.pkDone||{})[i]||[]).slice(), cur = (g.pkPick||{})[i]||0, out = [], plain = !!((g.pkPlain||{})[i]);
     if (cur) done.push(cur);
-    done.forEach(function(lv, k){ out.push({n:k+1, level:lv, pts:ppeokChainPts(g, lv, k+1), name:ppeokName(lv, k+1)}); });
+    // plain: 첫 뻑이 첫뻑(점수 있음)이 아니라 따로 한 일반 뻑(0점, 3뻑 횟수에만 셈)
+    done.forEach(function(lv, k){ if (k===0 && plain && lv===1) out.push({n:1, level:1, pts:0, name:'뻑', plain:true}); else out.push({n:k+1, level:lv, pts:ppeokChainPts(g, lv, k+1), name:ppeokName(lv, k+1)}); });
+    // 3번째(최종3뻑)까지 가면 앞 뻑 점수는 빼고 최종3뻑 점수만 (JB: 최종3뻑은 5점으로 마무리)
+    if (out.length>=PPEOK_MAX_N) for (var q=0; q<out.length-1; q++){ out[q].pts = 0; out[q].inFinal = true; }
     return out;
   }
-  function pkChainText(c){ return c.n+'번째 뻑'+(c.level>1?' '+PPEOK_NAMES[c.level]:'')+'('+c.pts+'점)'; }
+  function pkChainText(c){ return c.n+'번째 뻑'+(c.level>1?' '+PPEOK_NAMES[c.level]:'')+'('+c.pts+'점'+(c.plain?', 첫뻑 아님':'')+(c.inFinal?', 최종3뻑에 포함':'')+')'; }
   // 낼 사람: 죽은 사람은 항상 빠짐. 'play'(기본, 값 없을 때) = 실제로 친 사람만(광팔이도 빠짐) / 'seated' = 광팔이(쉬는 사람)도 냄 (예전에 설정에서 저장한 값은 그대로)
   // JB: 광팔이 = 쉬는(죽은) 사람 → 뻑은 언제나 이번 판에 친 사람만 냄 (예전 설정값 'seated'는 읽기만 하고 쓰지 않음)
   function ppeokPayerMode(g){ return 'play'; }
@@ -266,7 +271,7 @@ var L = (function(){
     (res.gwang||[]).forEach(function(x){ bal[x.from] -= x.pay; bal[x.to] += x.pay; });
     var out = [];
     (ppeoks||[]).forEach(function(e){
-      var n = Math.floor(+e.n||0), pts = n ? ppeokChainPts(g, e.level, n) : ppeokPoints(g, e.level); if (!pts || play.indexOf(e.idx)<0) return;
+      var n = Math.floor(+e.n||0), pts = (e.pts!==undefined && e.pts!==null) ? +e.pts : (n ? ppeokChainPts(g, e.level, n) : ppeokPoints(g, e.level)); if (!pts || play.indexOf(e.idx)<0) return;
       var each = pts * g.ppp;
       payers.filter(function(i){ return i!==e.idx; }).forEach(function(i){
         var pay = Math.min(each, Math.max(0, bal[i])); bal[i] -= pay; bal[e.idx] += pay;
@@ -337,7 +342,7 @@ var L = (function(){
     });
     g.prevDead = {}; Object.keys(g.deadPick||{}).forEach(function(j){ if (g.deadPick[j] && +j!==g.gpPick && +j!==g.gpAutoDead) g.prevDead[j] = true; }); // 직전 판 죽은 사람(광팔이 제외): 다음 판 죽음·광팔이 불가
     g.prevGp = (g.gpPick!==undefined && g.gpPick!==null) ? g.gpPick : -1; // 직전 판 광팔이: 다음 판 광팔이만 불가(죽음·진행은 선택 가능)
-    delete g.gpPick; delete g.pkPick; delete g.pkDone; delete g.pkRec; delete g.gwCur; delete g.deadPick; delete g.seonPick; delete g.gpAutoDead;
+    delete g.gpPick; delete g.pkPick; delete g.pkDone; delete g.pkPlain; delete g.pkRec; delete g.gwCur; delete g.deadPick; delete g.seonPick; delete g.gpAutoDead;
     if (g.owe) Object.keys(g.owe).forEach(function(j){ if (g.players[j] && g.players[j].bal>0) delete g.owe[j]; }); if (g.owe && !Object.keys(g.owe).length) delete g.owe; // 다시 0원 위로 올라오면 한도 초과분은 다 낸 것
     delete g.neg; // 판이 끝남: 이 판에서 마이너스였던 사람도 이제 0원 이하면 오링(allIn)
     var wp = g.players[res.winner]; wp.wins = (wp.wins||0) + 1;
@@ -346,7 +351,7 @@ var L = (function(){
     g.log.unshift({t:'판', r:g.round, txt: note || (g.players[res.winner].name+' 승, '+won(res.total)+' 받음')});
   }
   function voidRound(g, doubleNext){
-    delete g.gpPick; delete g.pkPick; delete g.pkDone; delete g.pkRec; delete g.gwCur; delete g.deadPick; delete g.seonPick; delete g.gpAutoDead; g.round++;
+    delete g.gpPick; delete g.pkPick; delete g.pkDone; delete g.pkPlain; delete g.pkRec; delete g.gwCur; delete g.deadPick; delete g.seonPick; delete g.gpAutoDead; g.round++;
     if (doubleNext) g.nextMult = Math.min(8, (g.nextMult||1)*2); // 모바일 룰: 나가리 누적 최대 8배
     g.log.unshift({t:'무효', r:g.round, txt:'무효(나가리·쇼당)'+(doubleNext?', 다음 판 x'+g.nextMult:'')});
   }
@@ -622,7 +627,7 @@ var L = (function(){
   // d=-1: 마지막으로 누른 것 되돌림(지금 단계 내림, 따로 한 뻑이 첫 단계면 그 뻑을 지우고 앞 뻑으로)
   function pkMark(g, i, d, sep){
     if (!g.pkPick) g.pkPick = {};
-    var cur = g.pkPick[i]||0, p = g.players[i], done = ((g.pkDone||{})[i]||[]).slice();
+    var cur = g.pkPick[i]||0, p = g.players[i], done = ((g.pkDone||{})[i]||[]).slice(), setPlain = false, unPlain = false;
     if (pkFind(g, (g.pkRec||{})[i])) return {ok:false, msg: p.name+' 님 뻑은 예전 방식으로 이미 정산돼 있어요. 고치려면 "뻑 내역"에서 수정해 주세요'};
     if (d>0 && (g.deadPick||{})[i] && !g.admin) return {ok:false, msg: p.name+' 님은 죽음으로 체크돼 있어서 뻑을 먹을 수 없어요'};
     if (d>0 && g.gpPick===i && !g.admin) return {ok:false, msg: p.name+' 님은 광팔이로 체크돼 있어서 뻑을 먹을 수 없어요'};
@@ -631,7 +636,8 @@ var L = (function(){
       if (sep && cur){
         if (done.length+1 >= PPEOK_MAX_N && !g.admin) return {ok:false, msg: p.name+' 님은 이번 판 뻑이 이미 '+PPEOK_MAX_N+'번째(마지막)예요'};
         done.push(cur); cur = 1;
-      } else { if (cur>=3) return {ok:false, msg: '3연뻑이 마지막 단계예요. 끊기고 다시 한 뻑이면 "따로 +"를 눌러 주세요'}; cur++; }
+      } else if (sep && !cur){ cur = 1; setPlain = true; // 첫 뻑을 첫뻑이 아닌 따로 한 뻑(0점)으로
+      } else { if (!cur) unPlain = true; if (cur>=3) return {ok:false, msg: '3연뻑이 마지막 단계예요. 끊기고 다시 한 뻑이면 "따로 +"를 눌러 주세요'}; cur++; }
     } else {
       if (!cur) return {ok:false};
       if (cur>1) cur--; else cur = done.length ? done.pop() : 0;
@@ -640,6 +646,9 @@ var L = (function(){
     if (!g.pkDone) g.pkDone = {};
     if (done.length) g.pkDone[i] = done; else delete g.pkDone[i];
     if (!Object.keys(g.pkDone).length) delete g.pkDone;
+    if (!g.pkPlain) g.pkPlain = {};
+    if (setPlain) g.pkPlain[i] = true; else if (unPlain || (!cur && !done.length)) delete g.pkPlain[i];
+    if (!Object.keys(g.pkPlain).length) delete g.pkPlain;
     var ch = pkChains(g, i);
     return {ok:true, level:cur, n:ch.length, chains:ch};
   }
@@ -1064,8 +1073,21 @@ if (typeof module!=='undefined') module.exports = L;
 // v2: 0원 시작 + 3종 충전 버튼. 예전 v1 저장분(시작 10만원 방식)은 읽지 않고 새 게임 화면으로 시작
 var EV_OFF=true; // JB 2026-11-09: 이벤트 발동 안 함
 var KEY='gostop_chip_v2', g=null, prev=null, view='main', st={}, RO=false, roT=0;
-function save(){ if (RO) return; localStorage.setItem(KEY, JSON.stringify({g:g, prev:prev})); }
-function load(){ if (RO) return; try{ var d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.g){ g=d.g; prev=d.prev; try{ L.negFix(g); }catch(e){} if(EV_OFF){ delete g.evPending; g.evNow=null; g.evMin=false; } if(!g.chg) g.chg=[]; } }catch(e){} }
+// 무제한 되돌리기/다음: 저장할 때마다 바뀐 상태를 쌓아 둠 (폰에는 최근 40개까지 저장)
+var UH=[], RH=[], LASTJ=null, HSKIP=false, UKEY='gostop_chip_undo2';
+function hJson(){ if(!g) return null; var e=g.evMin; delete g.evMin; var j=JSON.stringify(g); if(e!==undefined) g.evMin=e; return j; }
+function hBtns(){ var u=document.getElementById('ubtn'), r=document.getElementById('rbtn'); if(u){ u.disabled=!UH.length; u.textContent='◀ 되돌리기'+(UH.length?' ('+UH.length+')':''); } if(r){ r.disabled=!RH.length; r.textContent='다음 ▶'+(RH.length?' ('+RH.length+')':''); } document.body.classList.toggle('nog', !g); }
+function save(){ if (RO) return; var j=hJson();
+  if(!g){ UH=[]; RH=[]; }
+  else if(HSKIP){ HSKIP=false; }
+  else if(LASTJ!==null && j!==LASTJ){ UH.push(LASTJ); if(UH.length>1000) UH.shift(); RH=[]; }
+  LASTJ=j; localStorage.setItem(KEY, JSON.stringify({g:g, prev:prev}));
+  try{ localStorage.setItem(UKEY, JSON.stringify({u:UH.slice(-40), r:RH.slice(-40)})); }catch(e){ try{ localStorage.setItem(UKEY, JSON.stringify({u:UH.slice(-10), r:RH.slice(-10)})); }catch(e2){} }
+  hBtns(); }
+function hGo(from,to){ if(!from.length) return; to.push(LASTJ); g=JSON.parse(from.pop()); g.evMin=true; LASTJ=hJson(); HSKIP=true; prev=null; PA=null; view='main'; st={}; render(); }
+function hUndo(){ if(!UH.length) return alert('되돌릴 것이 없어요'); hGo(UH,RH); }
+function hRedo(){ if(!RH.length) return alert('다시 할 것이 없어요'); hGo(RH,UH); }
+function load(){ if (RO) return; try{ var d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.g){ g=d.g; prev=d.prev; try{ L.negFix(g); }catch(e){} if(EV_OFF){ delete g.evPending; g.evNow=null; g.evMin=false; } if(!g.chg) g.chg=[]; LASTJ=hJson(); HSKIP=true; try{ var u=JSON.parse(localStorage.getItem(UKEY)); if(u){ UH=u.u||[]; RH=u.r||[]; } }catch(e){} } }catch(e){} }
 function snap(){ prev = JSON.stringify(g); }
 function dashTap(i){
   if (view!=='main') return;
@@ -1077,7 +1099,7 @@ function dashHtml(){
   if (!g||!g.players) return '';
   var fc={}, seon=-1, lw=-1, el='';
   try{ fc=L.fineCounts(g,true); }catch(e){} try{ seon=L.curSeon(g); }catch(e){} try{ lw=L.lastWinner(g); }catch(e){}
-  if (g.tierOn===true && g.t0){ var m=Math.max(0,Math.floor((Date.now()-g.t0)/60000)); el=' · 경과 '+Math.floor(m/60)+':'+('0'+(m%60)).slice(-2); }
+  if (g.t0){ var m=Math.max(0,Math.floor((Date.now()-g.t0)/60000)); el=' · 경과 '+Math.floor(m/60)+':'+('0'+(m%60)).slice(-2); }
   var h='<div class="dash" id="dash"><div class="dtop"><span>'+((g.round||0)+1)+'판 · 점당 '+W(g.ppp)+el+'</span><span>모인 돈 '+W(L.pool(g))+'</span></div><div class="dgrid">';
   g.players.forEach(function(p,i){
     var out=!L.live(g,i), neg=!out&&p.bal<=0, net=p.bal-p.invested, dd=(g.deadPick||{})[i]&&!out, gp=g.gpPick===i&&!out, tg='';
@@ -1100,16 +1122,42 @@ function dashHtml(){
 // 접은 이벤트: 대시보드(상단 고정) 아랫줄에 고정 표시, 누르면 전체 팝업 다시
 function evDockHtml(){ if(!g||!g.evNow||!g.evMin||(typeof RO!=='undefined'&&RO)) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
   return '<div class="evmini" id="evmini" onclick="event.stopPropagation();g.evMin=false;render()">🎉 이벤트 진행 중: <b>'+esc(ev.title)+'</b> <span class="evopen">눌러서 크게 보기</span>'+evCards(ev.id)+'<div class="evsub">판 끝 「결과 확인」에서 성공한 사람을 골라 같이 정산돼요</div></div>'; }
+// 수동 점당: 첫 충전 후 정한 시각(기본 30분·1시간30분)이 되면 점당 올릴지 팝업
+var PA=null;
+function minTxt(m){ return (m>=60?Math.floor(m/60)+'시간':'')+(m%60?(m%60)+'분':''); }
+function pppAskCheck(){
+  if(!g||(typeof RO!=='undefined'&&RO)||g.tierOn===true||!g.t0||PA) return false;
+  var m=(Date.now()-g.t0)/60000, t=L.tiersOf(g), ms=[t[0].min,t[1].min], hit=-1, pa=g.pppAsk||{};
+  ms.forEach(function(x,k){ if(m>=x&&!pa[x]) hit=k; });
+  if(hit<0) return false; g.pppAsk=pa;
+  for(var k=0;k<hit;k++) g.pppAsk[ms[k]]=true;
+  var tgt=t[hit+1].ppp, inc=tgt>g.ppp?tgt-g.ppp:500;
+  PA={min:ms[hit], inc:inc}; return true;
+}
+function pppAskHtml(){ if(!PA||!g) return '';
+  var bs='display:inline-block;width:auto;margin:4px;padding:10px 18px;font-size:20px;font-weight:700;border-radius:10px;border:0;';
+  return '<div class="evov" id="pppask"><div class="evbox" style="color:#222">'+
+   '<div style="font-size:26px;font-weight:800;color:#c0392b;margin:6px 0">⏰ '+minTxt(PA.min)+'이 경과되었습니다.</div>'+
+   '<div style="font-size:24px;font-weight:800;color:#7b3fa0;margin:8px 0 14px">점당 가격을 올릴까요?</div>'+
+   '<div style="font-size:22px;color:#222;margin:8px 0">현재 <b>'+W(g.ppp)+'</b> / <b style="color:#2a7a4a">+'+W(PA.inc)+'</b></div>'+
+   '<div style="font-size:26px;font-weight:800;color:#c00;margin:4px 0 10px">→ '+W(g.ppp+PA.inc)+'</div>'+
+   '<div><button style="'+bs+'background:#ddd;color:#222" onclick="pppInc(-500)">-500</button><button style="'+bs+'background:#ddd;color:#222" onclick="pppInc(500)">+500</button></div>'+
+   '<div style="margin-top:12px"><button id="pppok" style="'+bs+'background:#7b3fa0;color:#fff;font-size:24px;padding:12px 30px" onclick="pppAskDo(true)">적용</button><button id="pppno" style="'+bs+'background:#555;color:#fff" onclick="pppAskDo(false)">이번엔 그대로</button></div>'+
+   '<div style="font-size:15px;color:#666;margin-top:10px">광값도 점당과 같이 바뀌어요</div></div></div>'; }
+function pppInc(d){ if(!PA) return; PA.inc=Math.max(500,PA.inc+d); render(); }
+function pppAskDo(yes){ if(!PA) return; var min=PA.min, inc=PA.inc; PA=null; g.pppAsk=g.pppAsk||{};
+  if(yes){ snap(); var old=g.ppp; g.ppp=old+inc; L.syncGwang(g); g.log.unshift({t:'점당', r:g.round, txt:'점당 금액 변경: '+W(old)+' → '+W(g.ppp)+' (첫 충전 후 '+minTxt(min)+' 경과 알림)'}); }
+  g.pppAsk[min]=true; save(); render(); }
 function tierBarHtml(){
   if (!g) return '';
   var ai=L.allIn(g); if (ai.length) return '<b style="color:#c00">'+esc(ai.join(', '))+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요</b>';
-  if (g.tierOn!==true) return '';
+  if (g.tierOn!==true){ if(!g.t0) return ''; var mm=Math.max(0,Math.floor((Date.now()-g.t0)/60000)); return '경과 '+Math.floor(mm/60)+'시간 '+('0'+(mm%60)).slice(-2)+'분 · 점당 '+W(g.ppp)+' (수동)'; }
   var tr=L.tiersOf(g);
   if (!g.t0) return '시간대별 점당 자동: 첫 충전을 누르면 시간이 시작돼요 ('+tr[0].min+'분까지 '+W(tr[0].ppp)+' → '+tr[1].min+'분까지 '+W(tr[1].ppp)+' → 이후 '+W(tr[2].ppp)+')';
   var now=Date.now(), m=Math.floor((now-g.t0)/60000), nx=L.nextTier(g, now), lim=180-m;
   return '경과 '+Math.floor(m/60)+'시간 '+('0'+(m%60)).slice(-2)+'분 · 점당 '+W(L.tierPpp(g, now))+(nx?' · '+nx.left+'분 뒤 '+W(nx.ppp):' (최종 단계)')+(lim>0?' · 3시간까지 '+Math.floor(lim/60)+'시간 '+('0'+(lim%60)).slice(-2)+'분':' · 3시간 경과');
 }
-setInterval(function(){ try{ if(!g||RO||view!=='main') return; if(L.syncPpp(g, Date.now())){ save(); render(); } else { var e=document.getElementById('tierbar'); if(e) e.innerHTML=tierBarHtml(); var d=document.getElementById('dash'); if(d) d.outerHTML=dashHtml(); } }catch(err){} }, 15000);
+setInterval(function(){ try{ if(!g||RO||view!=='main') return; if(pppAskCheck()){ save(); render(); } else if(L.syncPpp(g, Date.now())){ save(); render(); } else { var e=document.getElementById('tierbar'); if(e) e.innerHTML=tierBarHtml(); var d=document.getElementById('dash'); if(d) d.outerHTML=dashHtml(); } }catch(err){} }, 15000);
 // ===== 지난 정산 기록: 정산 화면을 열거나 초기화하기 전에 폰에 저장 (초기화해도 남음, 최근 50개) =====
 var HKEY='gostop_chip_hist';
 function histGet(){ try{ return JSON.parse(localStorage.getItem(HKEY))||[]; }catch(e){ return []; } }
@@ -1181,6 +1229,7 @@ function RULES(){
 
 function render(){
   if (RO) return renderRO();
+  try{ hBtns(); }catch(e){}
   var m=$('mult');
   if (g && g.nextMult>1){ m.textContent='다음 판 x'+g.nextMult; m.classList.remove('hide'); } else m.classList.add('hide');
   if (view==='hist') return renderHist();
@@ -1226,7 +1275,7 @@ function renderMain(){
     flash='<div class="flash">'+esc(g.players[lc.i].name)+' +'+W(lc.amt)+' 충전 완료 (잔액 '+W(g.players[lc.i].bal)+')'+
       (L.canUndoCharge(g,lc.id)?'<button class="b3 small" onclick="cancelCharge('+lc.id+')">방금 충전 취소</button>':'')+'</div>';
   }
-  var h=(g.admin?'<div class="flash" style="background:#b00020">관리자 모드 — 모든 규칙 검사 꺼짐 (어떤 버튼이든 누를 수 있어요)</div>'+adminHtml():'')+evHtml()+dashHtml()+flash+'<div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
+  var h=(g.admin?'<div class="flash" style="background:#b00020">관리자 모드 — 모든 규칙 검사 꺼짐 (어떤 버튼이든 누를 수 있어요)</div>'+adminHtml():'')+(pppAskCheck(),pppAskHtml())+evHtml()+dashHtml()+flash+'<div id="tierbar" class="note" style="text-align:center;font-size:15px;margin:4px 0">'+tierBarHtml()+'</div><div class="grid">';
   g.players.forEach(function(p,i){
     var out=!L.live(g,i), neg=!out&&p.bal<=0, hide=out&&!g.admin;
     var dOn=(g.deadPick||{})[i]&&!out;
@@ -1357,10 +1406,10 @@ function toggleGpCard(i){
   st={pkMsg:msg}; if(g.gpPick!==undefined && g.gpPick!==null) maybeShowEvent(); render(); if (msg) alert(msg);
 }
 // 카드의 뻑: + 로 없음→첫뻑→2연뻑→3연뻑, - 로 한 단계 내림. 누르는 즉시 그 시점 점당 금액으로 정산(이전 단계 정산은 정확히 되돌리고 새 단계로 바꿈)
-function pkLabel(i){ var ch=L.pkChains(g,i), c=ch[ch.length-1]; return c ? (c.level>1 ? L.PPEOK_NAMES[c.level] : (c.n===1 ? L.PPEOK_NAMES[1] : c.n+'번째')) : '없음'; }
+function pkLabel(i){ var ch=L.pkChains(g,i), c=ch[ch.length-1]; return c ? (c.level>1 ? L.PPEOK_NAMES[c.level] : (c.n===1 ? (c.plain ? '1번째' : L.PPEOK_NAMES[1]) : c.n+'번째')) : '없음'; }
 // 뻑 줄 아래: 이 사람 몇 번째 뻑(점수)인지 + 따로+ (연뻑이 끊긴 뒤 다시 한 뻑)
-function pkDetail(i, cls){ var ch=L.pkChains(g,i); if (!ch.length) return '';
-  return '<div class="pkdet">'+ch.map(L.pkChainText).join(' · ')+(ch.length>1?' = 합 '+ch.reduce(function(a,c){ return a+c.pts; },0)+'점':'')+
+function pkDetail(i, cls){ var ch=L.pkChains(g,i); if (!ch.length) return '<div class="pkdet"><button class="pkb pksep '+(cls||'')+'" onclick="pkMarkUI('+i+',1,true)">따로+ (첫뻑 아님, 0점)</button></div>';
+  return '<div class="pkdet">'+ch.map(L.pkChainText).join(' · ')+(ch.length>1?' = 합 '+ch.reduce(function(a,c){ return a+c.pts; },0)+'점'+(ch.length>=3?' (최종3뻑: 마지막 뻑 점수만)':''):'')+
     (ch.length<3||g.admin?' <button class="pkb pksep '+(cls||'')+'" onclick="pkMarkUI('+i+',1,true)">따로+</button>':'')+'</div>'; }
 function pkStep(i,d){
   var lv=(g.pkPick||{})[i]||0, nx=Math.max(0, Math.min(3, lv+d));
@@ -1669,7 +1718,7 @@ function toS3(){
 function curSeon(){ return st.seon!==undefined ? st.seon : (st.order ? st.order[0] : undefined); }
 function curRes(){
   return L.calcRound(g, st.w, {chongtong:!!st.ct, ppeokWin:!!(st.ct&&st.ppw), ppeokNWin:!!(st.ct&&st.pnw), giveup:!!st.giveup, score:st.score, go:st.go, shake:st.shake, bomb:st.bomb, 
-    ppeoks: st.ct ? [] : [].concat.apply([], pkWho().filter(function(i){ return (g.pkPick||{})[i]>0 && !L.pkFind(g,(g.pkRec||{})[i]); }).map(function(i){ return L.pkChains(g,i).map(function(c){ return {idx:i, level:c.level, n:c.n}; }); })), seated: actList(),
+    ppeoks: st.ct ? [] : [].concat.apply([], pkWho().filter(function(i){ return (g.pkPick||{})[i]>0 && !L.pkFind(g,(g.pkRec||{})[i]); }).map(function(i){ return L.pkChains(g,i).map(function(c){ return {idx:i, level:c.level, n:c.n, pts:c.pts}; }); })), seated: actList(),
     losers:Object.keys(st.lo).map(function(i){ var o=st.lo[i]; return {idx:+i, pi:o.pi, gwang:o.gwang, meong:o.meong, gobak:o.gobak}; }),
     seon: curSeon(),
     gwangs:[] }); // 광값은 카드·판 끝 화면 +/-에서 이미 정산 (이중 정산 안 함)
@@ -1763,7 +1812,7 @@ function renderSet(){
   app.innerHTML=h;
 }
 function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value, pn2=+$('spn2').value, pn3=+$('spn3').value; if($('spn2').value===''||$('spn3').value==='') return alert('따로 한 2번째·3번째 뻑 점수를 넣어 주세요 (0점도 돼요)'); if(!(pks>0)||!(pkm>0)||!(pn2>=0)||!(pn3>=0)) return alert('뻑 점수·배수를 확인해 주세요 (첫뻑 점수·배수는 1 이상, 2번째·3번째 뻑은 0 이상)'); var fa=+$('sfa').value; if(!(fa>0)) return alert('벌금 금액을 확인해 주세요'); var fo=+$('sfo').value; if(!(fo>0)) return alert('멍청이 금액을 확인해 주세요'); var t1=+$('st1').value,t2=+$('st2').value,t3=+$('st3').value,m1=+$('stm1').value,m2=+$('stm2').value; if(!(t1>0&&t2>0&&t3>0&&m1>0&&m2>m1)) return alert('시간대 금액과 분(2단계 분이 1단계보다 커야 해요)을 확인해 주세요'); var oldP=g.ppp; snap(); g.tierOn=$('stier').checked; g.tiers=[{min:m1,ppp:t1},{min:m2,ppp:t2},{min:null,ppp:t3}]; g.fineAmt=fa; g.foolAmt=fo; g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokN2=pn2; g.ppeokN3=pn3; g.ppp=p; g.gwangPrice=(p!==oldP)?p:gp; if(g.tierOn&&L.syncPpp(g,Date.now())){} L.syncGwang(g); g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
-function resetAll(){ if(!confirm('모든 기록을 지우고 새로 시작할까요? (정산 기록은 "지난 정산 기록"에 자동 저장돼요)')) return; if(!confirm('정말 지울까요?')) return; histSave(); g=null; prev=null; localStorage.removeItem(KEY); view='main'; render(); }
+function resetAll(){ if(!confirm('모든 기록을 지우고 새로 시작할까요? (정산 기록은 "지난 정산 기록"에 자동 저장돼요)')) return; if(!confirm('정말 지울까요?')) return; histSave(); g=null; prev=null; PA=null; localStorage.removeItem(KEY); view='main'; render(); }
 
 function capNote(r){ return r.short ? '<br><span class="capnote" style="font-size:16px;color:#b35c00">실제 손익 '+W(r.rawNet)+' → 충전금액 '+W(r.invested)+'까지만 냄 (부족분 '+W(r.short)+' 안 냄'+((r.cutTo||[]).length?': '+r.cutTo.map(function(c){ return esc(g.players[c.i].name)+' '+W(c.amt); }).join(', ')+' 덜 받음':'')+')</span>' : (r.cut ? '<br><span class="capnote" style="font-size:16px;color:#b35c00">실제 손익 '+(r.rawNet>0?'+':'')+W(r.rawNet)+' → 마이너스로 받은 돈 중 못 받는 '+W(r.cut)+' 빼고</span>' : ''); }
 function renderEnd(){
