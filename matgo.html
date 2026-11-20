@@ -934,6 +934,9 @@ var L = (function(){
     function nmIs(i, re){ return re.test(String(g.players[i].name||'').replace(/\s/g,'')); }
     debt.forEach(function(d){ if (!(d.v>0) || !nmIs(d.i, /^(세훈|송세|송세훈)$/)) return;
       cred.forEach(function(c){ if (d.v>0 && c.v>0 && nmIs(c.i, /^미경$/)){ var a=Math.min(c.v,d.v); tr.push({from:d.i,to:c.i,amt:a}); c.v-=a; d.v-=a; } }); });
+    // 반대로 미경 낼 돈도 되도록 세훈(송세)에게 먼저
+    debt.forEach(function(d){ if (!(d.v>0) || !nmIs(d.i, /^미경$/)) return;
+      cred.forEach(function(c){ if (d.v>0 && c.v>0 && nmIs(c.i, /^(세훈|송세|송세훈)$/)){ var a=Math.min(c.v,d.v); tr.push({from:d.i,to:c.i,amt:a}); c.v-=a; d.v-=a; } }); });
     // 금액이 정확히 같은 쌍 먼저 (이체 횟수 줄이기)
     debt.forEach(function(d){ var c = cred.find(function(c){return c.v===d.v && c.v>0;}); if (c && d.v>0){ tr.push({from:d.i,to:c.i,amt:d.v}); c.v=0; d.v=0; } });
     while (true){
