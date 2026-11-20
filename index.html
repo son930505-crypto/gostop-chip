@@ -105,7 +105,7 @@ var L = (function(){
   // limit = 기본 충전 금액(예전 데이터 호환용). 새 게임은 항상 모두 잔액 0원, 넣은 돈 0원에서 시작 (자동 충전 없음)
   function newGame(names, limit, ppp){
     var st0 = 0;
-    return { limit: limit, ppp: ppp, start: st0, nextMult: 1, round: 0, gwangpal: true, ctScore: 10, giveupMult: 2, gwangPrice: 1500, gwangPayer: 'noSeon',
+    return { limit: limit, ppp: ppp, start: st0, nextMult: 1, round: 0, gwangpal: true, ctScore: 10, giveupMult: 4, gwangPrice: ppp, gwangPayer: 'noSeon', ppeokScore: 3, ppeokN2: 0, ppeokN3: 5, tiers: [{min:30, ppp:1500}, {min:90, ppp:2000}, {min:null, ppp:3000}],
       players: names.map(function(n){ return {name:n, bal:st0, charges:st0>0?1:0, invested:st0}; }),
       log: [], chg: [], chgSeq: 0, tierOn: true, t0: null };
   }
@@ -1249,8 +1249,8 @@ function renderSetup(){
   h+='</div>';
   for (var i=0;i<n;i++) h+='<input type="text" id="nm'+i+'" placeholder="'+(i+1)+'번 이름 (예: '+['철수','영희','민수','지영','현우','수진'][i]+')" value="'+esc((st.names||[])[i]||'')+'" style="margin-top:8px" oninput="(st.names=st.names||[])['+i+']=this.value">';
   h+='<p class="note">모두 0원으로 시작해요. 시작 후 각자 카드의 +1만원·+5만원·+10만원 버튼으로 충전해요.</p>';
-  h+='<label class="ck"><input type="checkbox" id="tieron" '+(st.tieroff?'':'checked')+' onchange="st.tieroff=!this.checked">시간대별 점당 자동 (첫 충전부터 30분까지 1,000원 → 1시간30분까지 1,500원 → 이후 2,000원)</label>';
-  h+='<p>1점당 금액 (원) — 자동을 끄면 이 금액으로 고정</p><input type="number" id="ppp" value="'+(st.ppp||1500)+'" oninput="st.ppp=+this.value">';
+  h+='<label class="ck"><input type="checkbox" id="tieron" '+(st.tieroff?'':'checked')+' onchange="st.tieroff=!this.checked">시간대별 점당 자동 (첫 충전부터 30분까지 1,500원 → 1시간30분까지 2,000원 → 이후 3,000원)</label>';
+  h+='<p>1점당 금액 (원) — 자동을 끄면 이 금액으로 고정</p><input type="number" id="ppp" value="'+(st.ppp||2000)+'" oninput="st.ppp=+this.value">';
   h+='<button class="b1" onclick="start()">게임 시작</button><button class="b3" onclick="st.hid=0;view=\'hist\';render()">지난 정산 기록 보기</button></div>'+RULES();
   app.innerHTML=h;
 }
