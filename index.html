@@ -995,6 +995,9 @@ var L = (function(){
     function nmIs(i, re){ return re.test(String(g.players[i].name||'').replace(/\s/g,'')); }
     debt.forEach(function(d){ if (!(d.v>0) || !nmIs(d.i, /^(세훈|송세|송세훈)$/)) return;
       cred.forEach(function(c){ if (d.v>0 && c.v>0 && nmIs(c.i, /^미경$/)){ var a=Math.min(c.v,d.v); tr.push({from:d.i,to:c.i,amt:a}); c.v-=a; d.v-=a; } }); });
+    // 반대로 미경 낼 돈도 되도록 세훈(송세)에게 먼저
+    debt.forEach(function(d){ if (!(d.v>0) || !nmIs(d.i, /^미경$/)) return;
+      cred.forEach(function(c){ if (d.v>0 && c.v>0 && nmIs(c.i, /^(세훈|송세|송세훈)$/)){ var a=Math.min(c.v,d.v); tr.push({from:d.i,to:c.i,amt:a}); c.v-=a; d.v-=a; } }); });
     // 금액이 정확히 같은 쌍 먼저 (이체 횟수 줄이기)
     debt.forEach(function(d){ var c = cred.find(function(c){return c.v===d.v && c.v>0;}); if (c && d.v>0){ tr.push({from:d.i,to:c.i,amt:d.v}); c.v=0; d.v=0; } });
     while (true){
@@ -1573,11 +1576,18 @@ function renderS1(){
   });
   h+='<div class="box"><h2>1단계: 누가 이겼나요?</h2>';
   rp.play.forEach(function(i){ h+='<button class="pick '+(st.w===i?'on':'')+'" onclick="st.w='+i+';render()">'+esc(g.players[i].name)+'</button>'; });
+  Object.keys(st.rest).map(Number).filter(function(i){ return rp.play.indexOf(i)<0 && !st.dead[i] && actList().indexOf(i)>=0; }).forEach(function(i){ h+='<button class="pick '+(st.w===i?'on':'')+'" onclick="st.w='+i+';render()">'+esc(g.players[i].name)+'</button>'; });
   h+='<button class="b1" onclick="toS2()">다음</button><button class="b4" onclick="toCT()">총통 승 ('+(g.ctScore||10)+'점, 바로 계산)</button><button class="b4" onclick="toCT(true)">3연뻑 승 ('+L.ppeokPoints(g,3)+'점, 바로 계산)</button><button class="b4" onclick="toCT(\'n3\')">최종3뻑 승 ('+L.ppeokNPts(g,3)+'점, 바로 계산)</button><button class="b3" onclick="view=\'main\';render()">취소</button></div>';
   app.innerHTML=h;
 }
-function checkS1(){
+function checkS1(ct){
   var rp=L.roundPlayers(g, st.rest, st.dead);
+  if (ct){ // 총통: 패 돌린 직후라 광팔이 지정 전 → 죽은 사람만 빼고 4명 모두 대상 (광팔이도 승자 가능)
+    var all=actList().filter(function(i){ return !st.dead[i]; });
+    if (all.length<2){ alert('치는 사람이 2명 이상이어야 해요'); return null; }
+    if (st.w===undefined || all.indexOf(st.w)<0){ alert('이긴 사람을 골라 주세요'); return null; }
+    return all.filter(function(i){ return i!==st.w; });
+  }
   if (st.conflict==='seon' && !g.admin){ alert('선은 광팔이가 될 수 없어요. 선을 바꾸거나 광팔이 체크를 풀어 주세요'); return null; }
   if (!rp.ok && !(g.admin && rp.play.length>=2)){ alert(rp.play.length>3 ? '치는 사람은 3명까지예요. 광팔이나 안 치는 사람을 골라 주세요' : '치는 사람이 2명 이상이어야 해요'); return null; }
   if (st.w===undefined || rp.play.indexOf(st.w)<0){ alert('이긴 사람을 골라 주세요'); return null; }
@@ -1586,7 +1596,7 @@ function checkS1(){
   return losers;
 }
 function toCT(pw){
-  var losers=checkS1(); if(!losers) return;
+  var losers=checkS1(pw===undefined); if(!losers) return;
   st.ct=true; st.ppw=pw===true; st.pnw=pw==='n3'; st.lo={}; losers.forEach(function(i){ st.lo[i]={}; });
   view='s3'; render();
 }

@@ -446,6 +446,8 @@ function settleTransfers(names,nets){
   var is=function(n,re){return re.test(String(n||'').replace(/\s/g,''));};
   debt.forEach(function(d){ if(!(d.v>0)||!is(d.n,/^(세훈|송세|송세훈)$/)) return;
     cred.forEach(function(c){ if(d.v>0&&c.v>0&&is(c.n,/^미경$/)){var a=Math.min(c.v,d.v); tr.push({from:d.n,to:c.n,amt:a}); c.v-=a; d.v-=a;} }); });
+  debt.forEach(function(d){ if(!(d.v>0)||!is(d.n,/^미경$/)) return; /* 반대로 미경 낼 돈도 세훈에게 먼저 */
+    cred.forEach(function(c){ if(d.v>0&&c.v>0&&is(c.n,/^(세훈|송세|송세훈)$/)){var a=Math.min(c.v,d.v); tr.push({from:d.n,to:c.n,amt:a}); c.v-=a; d.v-=a;} }); });
   debt.forEach(function(d){ var c=cred.find(function(c){return c.v===d.v&&c.v>0;}); if(c&&d.v>0){ tr.push({from:d.n,to:c.n,amt:d.v}); c.v=0; d.v=0; } });
   while(true){ cred.sort(function(a,b){return b.v-a.v;}); debt.sort(function(a,b){return b.v-a.v;});
     if(!cred.length||!debt.length||cred[0].v<=0||debt[0].v<=0) break;
