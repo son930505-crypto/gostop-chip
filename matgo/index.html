@@ -317,6 +317,18 @@ input,select{font-family:inherit;user-select:text;-webkit-user-select:text;touch
 /* v3 비교 2차: 결과창을 화면 가로 전체 띠 형태로 (레퍼런스 형태) */
 .rbox{left:400px;right:400px;width:auto;margin-left:0;border-radius:0;border:0;border-top:2px solid rgba(226,189,90,.55);border-bottom:2px solid rgba(226,189,90,.55);background:linear-gradient(90deg,rgba(0,0,0,.35),rgba(6,10,6,.93) 18%,rgba(6,10,6,.93) 82%,rgba(0,0,0,.35));padding:52px 30px 20px}
 .rbox .rbtns{justify-content:center}
+/* 충전(코드 붙여넣기) */
+.ov.top{z-index:400}
+.tb-chg{margin-left:8px;padding:4px 12px;font-size:15px}
+.crow{display:flex;gap:6px;align-items:center;justify-content:center;margin:8px 0}.crow input{flex:1;min-width:0;font-family:monospace;font-size:17px;text-transform:uppercase}
+.pchg{position:absolute;right:84px;bottom:6px;padding:2px 9px;border-radius:10px;font-size:12px;font-weight:bold;color:#fff;background:linear-gradient(#9fe04c,#3f9612);border:1px solid #e2ffb0;box-shadow:0 2px 0 rgba(0,0,0,.3);z-index:4}
+.rchg{margin-left:8px}
+#cpre .chip.on{background:linear-gradient(#fff28a,#ffb21a);color:#5a2a00;border-color:#fff}
+.ov .mbox{max-height:600px;overflow-y:auto;overscroll-behavior:contain}
+.appbar{position:absolute;left:50%;top:62px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;white-space:nowrap;padding:6px 8px 6px 16px;border-radius:24px;background:rgba(0,0,0,.55);border:1px solid #b8e986;color:#e9ffd0;font-size:14px;z-index:5}
+.invbar{display:flex;align-items:center;gap:8px;margin-left:10px;padding:4px 6px 4px 12px;border-radius:20px;background:rgba(80,160,30,.25);border:1px solid #9fe04c;color:#fff;font-size:15px}.invbar b{color:#ffe14a;letter-spacing:1px}
+.invx{background:none;border:0;color:#cfe;font-size:16px;padding:0 4px}
+.appbar{top:auto;bottom:36px;font-size:15px}
 </style>
 </head><body><div id="root" class="bg-night"><div id="stage"></div></div>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';document.head.appendChild(s)"></script>
@@ -950,19 +962,28 @@ input,select{font-family:inherit;user-select:text;-webkit-user-select:text;touch
     return 4294967296 * (2097151 & h2) + (h1 >>> 0);
   }
   function sig(body) { return (h53(SECRET + '|' + body, 7).toString(36) + h53(body + '|' + SECRET, 13).toString(36)).toUpperCase().slice(0, 8); }
+  // 충전허용코드(v4): MC-<금액36진>-<고유10자>-<서명8자>, 금액>0, 일회성(사용 기록은 앱에서). 예전 MG- 코드는 무효
+  function rnd(n) {
+    var A = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', s = '', g = (typeof crypto !== 'undefined' && crypto.getRandomValues) ? crypto : null;
+    var buf = g ? g.getRandomValues(new Uint8Array(n)) : null;
+    for (var i = 0; i < n; i++) s += A[(buf ? buf[i] : Math.floor(Math.random() * 256)) % 36];
+    return s;
+  }
   function makeCode(amount, nonce) {
-    nonce = (nonce || Math.random().toString(36).slice(2, 7)).toUpperCase();
-    var body = B(amount).toString(36).toUpperCase() + '-' + nonce;
-    return 'MG-' + body + '-' + sig(body);
+    var a = B(amount); if (a <= 0n) throw new Error('amount');
+    nonce = (nonce || rnd(10)).toUpperCase();
+    var body = a.toString(36).toUpperCase() + '-' + nonce;
+    return 'MC-' + body + '-' + sig('c4|' + body);
   }
   function readCode(code) {
     var c = String(code || '').trim().toUpperCase().replace(/\s/g, '');
-    var m = /^MG-([0-9A-Z]+)-([0-9A-Z]+)-([0-9A-Z]{8})$/.exec(c);
+    var m = /MC-([0-9A-Z]+)-([0-9A-Z]{10})-([0-9A-Z]{8})/.exec(c);
     if (!m) return null;
     var body = m[1] + '-' + m[2];
-    if (sig(body) !== m[3]) return null;
+    if (sig('c4|' + body) !== m[3]) return null;
     var amt = 0n; for (var i = 0; i < m[1].length; i++) amt = amt * 36n + BigInt(parseInt(m[1][i], 36));
-    return { amount: amt, nonce: m[2], id: body };
+    if (amt <= 0n) return null;
+    return { amount: amt, nonce: m[2], id: body, code: 'MC-' + body + '-' + m[3] };
   }
   function pinHash(pin) { return h53('pin|' + pin, 99).toString(36); }
   var API = { B: B, kor: kor, comma: comma, parse: parse, makeCode: makeCode, readCode: readCode, pinHash: pinHash };
@@ -1160,12 +1181,15 @@ function savePrefs() { ss('mg_prefs', prefs); }
 // ---- 관리자 ----
 function pinHashNow() { return ls('mg_pinhash', M$.pinHash(DEFAULT_PIN)); }
 function isAdmin() { return ls('mg_admin', '') === pinHashNow(); }
-// 셀프충전(+1억) 허용: 관리자 본인, 또는 관리자가 만든 서명 허용코드(초대링크 sc=…)를 가진 기기
+// 충전허용코드(일회성): 코드 1개 = 1회 충전(코드에 담긴 금액). 기기별 사용기록 mg_used2, 방장은 방별로도 기록
+// 예전 영구 허용 상태(mg_selfc, mg_sctoken)와 MG- 코드는 업데이트 후 무효
+try { localStorage.removeItem('mg_selfc'); localStorage.removeItem('mg_sctoken'); localStorage.removeItem('mg_used'); localStorage.removeItem('mg_pendsc'); } catch (e) {}
 var SELF_AMT = 100000000n;
-function scToken() { var t = ls('mg_selfc', ''); var r = t && M$.readCode(t); return r && r.amount === 0n ? t : ''; }
-function validSc(t) { var r = t && M$.readCode(t); return !!(r && r.amount === 0n); }
-function selfChargeOK() { return isAdmin() || !!scToken(); }
-function adminScToken() { var t = ls('mg_sctoken', ''); if (!validSc(t)) { t = M$.makeCode(0n); ss('mg_sctoken', t); } return t; }
+function codeUsed(id) { return ls('mg_used2', []).indexOf(id) >= 0; }
+function markUsed(id) { var u = ls('mg_used2', []); if (u.indexOf(id) < 0) { u.push(id); if (u.length > 2000) u = u.slice(-2000); ss('mg_used2', u); } }
+function newChargeCode(amount) { return M$.makeCode(amount); }
+// 관리자 본인 기기만 로비·게임에서 +1억 바로충전 (참가자는 방장 관리자방의 '셀프충전 허용' 또는 코드)
+function selfChargeOK() { return isAdmin(); }
 
 // ---- 전역 상태 ----
 var G = null;            // 현재 게임/방
@@ -1242,6 +1266,9 @@ function modal(html, cls, onClose) {
   $$('[data-close]', o).forEach(function (b) { b.onclick = function () { SND.play('click'); closeModal(); }; });
   return o;
 }
+// 충전 입력창(#ovc)은 게임 팝업(고/스톱 등)·화면 전환과 따로 떠 있어 입력 중 사라지지 않음
+function wipeStage(html) { var k = document.getElementById('ovc'); stage.innerHTML = html || ''; if (k) stage.appendChild(k); }
+function closeCode() { var o = document.getElementById('ovc'); if (o) o.remove(); }
 function closeModal() { var o = document.getElementById('ov'); if (o) { var f = o._onClose; o.remove(); if (f) f(); } }
 function avImg(av) { return '<img alt="" draggable="false" src="' + (AVI[normAv(av)] || '') + '">'; }
 
@@ -1249,7 +1276,8 @@ function avImg(av) { return '<img alt="" draggable="false" src="' + (AVI[normAv(
 var BIP = null;
 window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); BIP = e; var b = document.getElementById('inst'); if (b) b.style.display = ''; });
 window.addEventListener('appinstalled', function () { BIP = null; toast('앱이 설치됐어요! 홈 화면의 맞고 아이콘으로 실행하세요', 2600); var b = document.getElementById('inst'); if (b) b.style.display = 'none'; });
-function isStandalone() { try { return matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } }
+// 설치된 앱으로 실행 중인지 (브라우저 탭의 전체화면 API는 제외)
+function isStandalone() { try { return (matchMedia('(display-mode: fullscreen)').matches && !document.fullscreenElement && !document.webkitFullscreenElement) || matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } }
 var IS_IOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 var IS_SAMSUNG = /SamsungBrowser/i.test(navigator.userAgent);
 function installApp() {
@@ -1267,7 +1295,7 @@ window.__mgOnUpdate = function () {
 /* 화면: 닉네임, 로비, 모드 선택, 매칭, 관리자/충전, 설정, 대기실 */
 function show(html, cls) {
   closeModal();
-  stage.innerHTML = '<div class="scr ' + (cls || '') + '">' + html + '</div>';
+  wipeStage('<div class="scr ' + (cls || '') + '">' + html + '</div>');
   root.className = cls && cls.indexOf('felt') >= 0 ? 'bg-felt' : 'bg-night';
 }
 function logoHtml(small) { return '<div class="logo' + (small ? ' sm' : '') + '" id="logo"><span class="l1">맞고</span><span class="l2">한판</span></div>'; }
@@ -1292,7 +1320,7 @@ function scrNick() {
 function topBar() {
   return '<div class="topbar"><div class="tb-me"><div class="tb-av">' + avImg(me.av) + '</div><div><div class="tb-nk">' + esc(me.nick) + ' <span class="lv">Lv.' + level() + '</span></div>' +
     '<div class="tb-st">' + stats.win + '승 ' + stats.lose + '패</div></div></div>' +
-    '<div class="tb-money"><i class="coin"></i><span id="mymoney">' + money(me.chips) + '</span><button class="tb-plus" id="code">+</button></div>' +
+    '<div class="tb-money"><i class="coin"></i><span id="mymoney">' + money(me.chips) + '</span><button class="gbtn green sm tb-chg" id="code">충전</button></div>' +
     (selfChargeOK() ? '<button class="gbtn gold sm selfc" id="selfc">+1억 충전</button>' : '') + (isStandalone() ? '' : '<button class="gbtn green sm" id="inst">📲 앱 설치</button>') + '<div class="tb-btns"><button class="ibtn" id="opt" title="설정">⚙</button></div></div>';
 }
 
@@ -1300,7 +1328,7 @@ function scrLobby() {
   if (UI.needReload) { location.reload(); return; }
   stopNet(); G = null; UI.queue = []; UI.busy = false;
   if (history.replaceState && location.search) history.replaceState(null, '', location.pathname);
-  var recent = ls('mg_recent', []).slice(0, 3);
+  var recent = ls('mg_recent', []).slice(0, 3), invi = inviteInfo();
   show(topBar() +
     '<div class="lob">' +
     '<div class="lob-head">' + logoHtml(true) + '<div class="lob-tabs"><span class="on">맞고</span><span class="dim">고스톱 (준비중)</span></div></div>' +
@@ -1315,6 +1343,7 @@ function scrLobby() {
     '<div class="lob-sec">친구와 한판 <small>방을 만들고 초대 링크를 보내세요</small></div>' +
     '<div class="friend"><button class="gbtn orange" id="mk">방 만들기</button>' +
     '<div class="joinbox"><input id="jc" maxlength="6" placeholder="방 코드 6자리"><button class="gbtn green" id="jg">입장</button></div>' +
+    (invi ? '<div class="invbar" id="invbar">📩 초대받은 방 <b>' + invi.code + '</b><button class="gbtn green sm" id="invgo">입장</button><button class="invx" id="invx">✕</button></div>' : '') +
     (recent.length ? '<div class="recent">최근 방 ' + recent.map(function (r) { return '<button class="chip" data-room="' + r.code + '">' + r.code + (r.role === 'host' ? ' (방장)' : '') + '</button>'; }).join('') + '</div>' : '') +
     '</div></div>', 'night');
   // 로고 5번 → 관리자
@@ -1331,6 +1360,8 @@ function scrLobby() {
   $('#mk').onclick = function () { SND.play('click'); hostRoom(newCode(), true); };
   $('#jg').onclick = function () { var c = $('#jc').value.trim().toUpperCase(); if (!/^[A-Z0-9]{6}$/.test(c)) return toast('방 코드 6자리를 넣어 주세요'); SND.play('click'); openRoom(c); };
   $$('[data-room]').forEach(function (b) { b.onclick = function () { openRoom(b.dataset.room); }; });
+  if ($('#invgo')) $('#invgo').onclick = function () { SND.play('click'); openRoom(invi.code); };
+  if ($('#invx')) $('#invx').onclick = function () { localStorage.removeItem('mg_invite'); var e = $('#invbar'); if (e) e.remove(); };
   $('#opt').onclick = function () { SND.play('click'); showSettings(); };
   $('#code').onclick = function () { SND.play('click'); redeemPopup(); };
   if ($('#selfc')) $('#selfc').onclick = function () { selfCharge(); };
@@ -1372,41 +1403,65 @@ function adminPanel() {
   var o = modal('<div class="mtitle">관리자 메뉴</div>' +
     '<div class="sec">내 머니: <b>' + money(me.chips) + '</b></div>' + amountPicker('am') +
     '<div class="mrow"><button class="gbtn green" id="addm">충전(+)</button><button class="gbtn orange" id="setm">이 금액으로 설정</button></div>' +
-    '<div class="sec">1억 셀프충전 허용코드 <small>(관리자 모드에서 만든 초대링크에도 자동 포함)</small></div><div class="codebox sm">' + adminScToken() + '</div><div class="mrow"><button class="gbtn blue" id="scs">허용코드 보내기</button></div>' +
-    '<div class="sec">충전코드 발급 <small>(받은 사람이 로비 + 버튼에 입력, 1회용)</small></div>' +
-    '<div class="mrow"><button class="gbtn blue" id="mkc">위 금액으로 코드 만들기</button></div><div id="codeout"></div>' +
+    '<div class="sec">충전허용코드 발급 <small>한 번 충전용 · 받은 사람이 충전 버튼에 붙여넣으면 그 금액만큼 1회 충전</small></div>' +
+    '<div class="amts" id="cpre">' + ['1억', '3억', '5억', '10억'].map(function (a) { return '<button class="chip' + (a === '1억' ? ' on' : '') + '" data-camt="' + a + '">' + a + '</button>'; }).join('') + '</div><input id="cam" value="1억" placeholder="직접 입력 (예: 2억 5000만)">' +
+    '<div class="mrow"><button class="gbtn blue" id="mkc">새 허용코드 만들기</button></div><div id="codeout"></div>' +
     '<div class="mrow sm"><button class="gbtn gray" id="pinc">PIN 변경</button><button class="gbtn gray" id="aoff">관리자 끄기</button></div><button class="xbtn" data-close>✕</button>', 'pop wide');
   bindAmts(o, 'am');
   function amt() { var v = M$.parse($('#am', o).value); if (!v || v <= 0n) { toast('금액을 넣어 주세요'); return null; } return v; }
   $('#addm', o).onclick = function () { var v = amt(); if (!v) return; me.chips = (B(me.chips) + v).toString(); saveMe(); SND.play('coin'); toast(money(v) + ' 충전 완료'); adminPanel(); refreshMoney(); };
   $('#setm', o).onclick = function () { var v = amt(); if (!v) return; me.chips = v.toString(); saveMe(); SND.play('coin'); toast('머니를 ' + money(v) + '으로 설정'); adminPanel(); refreshMoney(); };
+  $$('[data-camt]', o).forEach(function (b) { b.onclick = function () { $$('[data-camt]', o).forEach(function (x) { x.classList.toggle('on', x === b); }); $('#cam', o).value = b.dataset.camt; }; });
+  $('#cam', o).oninput = function () { $$('[data-camt]', o).forEach(function (x) { x.classList.toggle('on', x.dataset.camt === $('#cam', o).value.trim()); }); };
   $('#mkc', o).onclick = function () {
-    var v = amt(); if (!v) return;
-    var c = M$.makeCode(v);
-    $('#codeout', o).innerHTML = '<div class="codebox">' + c + '</div><div class="small">' + money(v) + ' · 한 기기에서 한 번만 쓸 수 있어요</div><div class="mrow"><button class="gbtn blue" id="cpc">복사/공유</button></div>';
-    $('#cpc', o).onclick = function () { shareText('맞고 한판 충전코드 (' + money(v) + '): ' + c); };
+    var v = M$.parse($('#cam', o).value); if (!v || v <= 0n) return toast('금액을 넣어 주세요');
+    var c = newChargeCode(v); SND.play('click');
+    $('#codeout', o).innerHTML = '<div class="codebox">' + c + '</div><div class="small"><b>' + money(v) + '</b> · 한 번 충전용 (한 번 쓰면 소진) · 누를 때마다 새 코드</div><div class="mrow"><button class="gbtn blue" id="cpc">복사/공유</button></div>';
+    try { $('#cpc', o).scrollIntoView({ block: 'nearest' }); } catch (e) {}
+    $('#cpc', o).onclick = function () { shareText('맞고 한판 충전허용코드 (' + money(v) + ', 한 번 충전용)\n' + c + '\n로비나 게임 화면의 [충전] 버튼을 눌러 붙여넣으세요'); };
   };
-  $('#scs', o).onclick = function () { shareText('맞고 한판 1억 셀프충전 허용코드: ' + adminScToken() + '\n(로비 머니 옆 + 버튼에 입력)'); };
   $('#pinc', o).onclick = function () {
     var p = prompt('새 PIN (4~12자리)'); if (!p) return; p = p.trim();
     if (p.length < 4) return toast('4자리 이상');
     ss('mg_pinhash', M$.pinHash(p)); ss('mg_admin', M$.pinHash(p)); toast('PIN이 바뀌었어요');
   };
-  $('#aoff', o).onclick = function () { localStorage.removeItem('mg_admin'); closeModal(); toast('관리자 모드를 껐어요'); };
+  $('#aoff', o).onclick = function () { localStorage.removeItem('mg_admin'); closeModal(); toast('관리자 모드를 껐어요'); if (!G) scrLobby(); };
 }
 function refreshMoney() { var e = $('#mymoney'); if (e) e.textContent = money(me.chips); }
+// 충전 입력창 (로비·대기실·게임·결과 어디서든). 코드 1개 = 1회 충전, 코드 금액만큼
 function redeemPopup() {
-  var o = modal('<div class="mtitle">충전코드 입력</div><input id="rc" placeholder="MG-XXXX-XXXX-XXXXXXXX" autocomplete="off"><div class="mrow"><button class="gbtn gray" data-close>닫기</button><button class="gbtn green" id="rok">충전</button></div>', 'pop');
-  $('#rok', o).onclick = function () {
-    var r = M$.readCode($('#rc', o).value);
-    if (!r) { SND.play('fail'); return toast('올바르지 않은 코드예요'); }
-    if (r.amount === 0n) { ss('mg_selfc', $('#rc', o).value.trim().toUpperCase()); SND.play('mission'); closeModal(); toast('1억 셀프충전이 허용됐어요!', 2400); return scrLobby(); }
-    var used = ls('mg_used', []);
-    if (used.indexOf(r.id) >= 0) { SND.play('fail'); return toast('이미 사용한 코드예요'); }
-    used.push(r.id); ss('mg_used', used);
-    me.chips = (B(me.chips) + r.amount).toString(); saveMe();
-    SND.play('coin'); SND.play('mission'); closeModal(); toast(money(r.amount) + ' 충전됐어요!', 2400); refreshMoney();
+  var body = ('<div class="mtitle">충전</div><div class="pdesc">관리자에게 받은 <b>충전허용코드</b>를 붙여넣으세요<br><small>코드 1개 = 1회 충전 (코드에 담긴 금액)</small></div>' +
+    '<div class="crow"><input id="rc" placeholder="MC-…" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="gbtn gray sm" id="rpaste">붙여넣기</button></div>') +
+    '<div class="mrow"><button class="gbtn gray" data-cclose>닫기</button><button class="gbtn green" id="rok">충전</button></div>';
+  closeCode();
+  var o = document.createElement('div'); o.id = 'ovc'; o.className = 'ov top pop'; o.innerHTML = '<div class="mbox">' + body + '</div>'; stage.appendChild(o);
+  $$('[data-cclose]', o).forEach(function (b) { b.onclick = function () { SND.play('click'); closeCode(); }; });
+  function go() { if (redeemCode($('#rc', o).value)) closeCode(); }
+  $('#rok', o).onclick = function () { SND.play('click'); go(); };
+  $('#rc', o).onkeydown = function (e) { if (e.key === 'Enter') go(); };
+  $('#rc', o).addEventListener('paste', function () { setTimeout(function () { if (M$.readCode($('#rc', o).value)) go(); }, 30); });
+  $('#rpaste', o).onclick = function () {
+    SND.play('click');
+    if (navigator.clipboard && navigator.clipboard.readText) navigator.clipboard.readText().then(function (txt) { $('#rc', o).value = String(txt || '').trim(); if (M$.readCode(txt)) go(); else toast('복사한 내용에 코드가 없어요'); }, function () { toast('입력칸을 길게 눌러 붙여넣어 주세요'); $('#rc', o).focus(); });
+    else { toast('입력칸을 길게 눌러 붙여넣어 주세요'); $('#rc', o).focus(); }
   };
+  return o;
+}
+function redeemCode(str, quiet) {
+  var r = M$.readCode(str);
+  if (!r) { SND.play('fail'); toast(/MG-/i.test(String(str)) ? '예전 형식 코드예요. 새 충전허용코드를 받아 주세요' : '올바르지 않은 코드예요'); return false; }
+  if (codeUsed(r.id)) { SND.play('fail'); toast('이미 사용한 코드예요'); return false; }
+  markUsed(r.id); addMyMoney(r.amount);
+  SND.play('coin'); SND.play('mission'); toast((quiet || '') + money(r.amount) + ' 충전됐어요! 보유 ' + money(me.chips), 2400);
+  return true;
+}
+function updPm() { if (!G || !G.chips) return; [0, 1].forEach(function (i) { var e = $('#pb' + i + ' .pm'); if (e) e.textContent = money(G.chips[i]); }); }
+function addMyMoney(a) {
+  if (G && (G.mode === 'ai' || G.mode === 'host')) {
+    G.chips[G.seat] = (B(G.chips[G.seat]) + a).toString(); if (G.room) G.room.chips = G.chips; me.chips = G.chips[G.seat]; saveMe();
+    if (G.mode === 'host') { saveHost(); broadcast(); }
+    updPm(); if (G.room && !G.view && !$('#game')) scrRoom();
+  } else if (!G) { me.chips = (B(me.chips) + a).toString(); saveMe(); refreshMoney(); }
 }
 function shareText(txt) {
   if (navigator.share) { navigator.share({ text: txt }).catch(function () {}); return; }
@@ -1432,18 +1487,17 @@ function showSettings() {
 }
 
 // ---- 대기실 ----
-function inviteUrl(code) { return location.origin + location.pathname + '?room=' + code + (isAdmin() && G && G.mode === 'host' && G.room && G.room.selfCharge !== false ? '&sc=' + encodeURIComponent(adminScToken()) : ''); }
-// +1억 셀프충전
+// 관리자 방장의 초대링크: 셀프충전 허용이면 매번 새 1억 충전허용코드(일회성)를 &sc= 로 붙임
+// 웹앱 초대링크: 설치된 앱(manifest scope) 기준 주소 + 방 코드. 설치된 안드로이드 크롬/삼성 인터넷은 앱으로 열림
+var APP_SCOPE = '/gostop-chip/matgo/';
+function appBase() { var p = location.pathname; return location.origin + (p.indexOf(APP_SCOPE) === 0 ? APP_SCOPE : p.replace(/[^\/]*$/, '')); }
+function inviteUrl(code) { return appBase() + '?room=' + code; }
+function inviteText(code) { return '🎴 맞고 웹앱 초대\n' + me.nick + '님이 맞고 한판에 초대했어요 (방 코드 ' + code + ')\n맞고 앱이 설치돼 있으면 앱으로 바로 열려요. 처음이면 링크를 열고 [앱 설치]를 눌러 주세요'; }
+function inviteInfo() { var v = ls('mg_invite', null); if (!v || !v.code || Date.now() - v.ts > 48 * 3600e3) return null; return v; }
+// +1억 바로충전: 관리자 본인, 또는 관리자 방장이 '셀프충전 허용'을 켠 방의 참가자 (코드 없이)
 function selfCharge() {
-  if (G && G.mode === 'guest') {
-    if (!(G.selfCharge || scToken())) return toast('방장이 셀프충전을 허용하지 않았어요');
-    if (NET.conn && NET.conn.open) { NET.conn.send({ t: 'self', sc: scToken() }); SND.play('coin'); } else toast('연결 중이에요');
-    return;
-  }
-  if (!selfChargeOK() && !(G && G.mode === 'host' && isAdmin())) return toast('셀프충전이 허용되지 않았어요');
-  SND.play('coin');
-  if (G && (G.mode === 'ai' || G.mode === 'host')) { G.chips[G.seat] = (B(G.chips[G.seat]) + SELF_AMT).toString(); if (G.room) G.room.chips = G.chips; me.chips = G.chips[G.seat]; saveMe(); if (G.mode === 'host') { saveHost(); broadcast(); } if (UI.view && !UI.busy) renderGame(); else if (G.room && !G.view) scrRoom(); }
-  else { me.chips = (B(me.chips) + SELF_AMT).toString(); saveMe(); refreshMoney(); }
+  if (G || !isAdmin()) return toast('관리자만 쓸 수 있어요');
+  SND.play('coin'); addMyMoney(SELF_AMT);
   toast('+1억 충전! 보유 ' + money(me.chips), 1500);
 }
 function addRecent(code, role) { var r = ls('mg_recent', []).filter(function (x) { return x.code !== code; }); r.unshift({ code: code, role: role, ts: Date.now() }); ss('mg_recent', r.slice(0, 5)); }
@@ -1460,6 +1514,7 @@ function scrRoom(msg) {
   }
   show('<div class="room">' +
     '<div class="rhead"><button class="gbtn gray sm" id="back">← 나가기</button><div class="rnet">' + esc(netTxt) + '</div></div>' +
+    (!isHost && !isStandalone() ? '<div class="appbar" id="appbar">📲 맞고 웹앱을 설치하면 다음 초대부터 앱으로 바로 열려요 · 설치 후에도 이 방(' + rm.code + ')으로 들어올 수 있어요<button class="gbtn green sm" id="rinst">앱 설치</button></div>' : '') +
     '<div class="rbody"><div class="rleft"><div class="rcard"><div class="rlab">방 코드</div><div class="rcode">' + rm.code + '</div>' +
     '<div class="mrow"><button class="gbtn blue" id="inv">초대하기</button><button class="gbtn gray" id="cp">링크 복사</button></div></div>' +
     '<div class="rcard"><div class="rlab">점당 금액</div>' + (isHost ?
@@ -1470,8 +1525,6 @@ function scrRoom(msg) {
     '<div class="ropts">' + (isHost ? '<button class="chip' + (rm.speed ? '' : ' on') + '" data-sp="0">일반</button><button class="chip' + (rm.speed ? ' on' : '') + '" data-sp="1">⚡스피드</button><label class="chk"><input type="checkbox" id="rmis" ' + (rm.missions ? 'checked' : '') + '>판 미션</label>'
       : '<span>' + (rm.speed ? '⚡스피드 모드' : '일반 모드') + ' · 판 미션 ' + (rm.missions ? '켜짐' : '꺼짐') + '</span>') + '</div></div></div>' +
     '<div class="rright"><div class="seats">' + seat(s0, 0, '방장') + '<div class="vs">VS</div>' + seat(s1, 1, '손님') + '</div>' +
-    (isHost && admin ? '<label class="chk scc"><input type="checkbox" id="rsc" ' + (rm.selfCharge !== false ? 'checked' : '') + '> 참가자 +1억 셀프충전 허용</label>' : '') +
-    ((isHost && admin) || (!isHost && (G.selfCharge || scToken())) ? '<button class="gbtn gold" id="rself">+1억 충전</button>' : '') +
     (isHost ? '<button class="gbtn orange big" id="start" ' + (s1 && s1.online ? '' : 'disabled') + '>게임 시작</button>' : '<div class="waitmsg dots">방장이 시작하길 기다리는 중</div>') +
     '</div></div></div>', 'felt');
   $('#back').onclick = function () {
@@ -1480,8 +1533,9 @@ function scrRoom(msg) {
     if (isHost) { if (NET.conn && NET.conn.open) try { NET.conn.send({ t: 'bye' }); } catch (e) {} localStorage.removeItem('mg_host_' + rm.code); }
     setTimeout(scrLobby, 150);
   };
-  $('#inv').onclick = function () { SND.play('click'); var u = inviteUrl(rm.code); if (navigator.share) navigator.share({ title: '맞고 한판', text: me.nick + '님이 맞고 한판에 초대했어요! 방 코드 ' + rm.code, url: u }).catch(function () {}); else copy(u); };
-  $('#cp').onclick = function () { SND.play('click'); copy(inviteUrl(rm.code)); };
+  $('#inv').onclick = function () { SND.play('click'); var u = inviteUrl(rm.code); if (navigator.share) navigator.share({ title: '맞고 웹앱 초대', text: inviteText(rm.code), url: u }).catch(function () {}); else copy(inviteText(rm.code) + '\n' + u); };
+  $('#cp').onclick = function () { SND.play('click'); copy(inviteText(rm.code) + '\n' + inviteUrl(rm.code)); };
+  if ($('#rinst')) $('#rinst').onclick = function () { SND.play('click'); installApp(); };
   if (isHost) {
     $$('[data-ppp]').forEach(function (b) { b.onclick = function () { SND.play('click'); rm.ppp = b.dataset.ppp; hostRoomChanged(); }; });
     $$('[data-fr]').forEach(function (b) { b.onclick = function () { rm.free = b.dataset.fr === '1'; if (!rm.free && !findChannel(rm.ppp)) rm.ppp = '1000'; hostRoomChanged(); }; });
@@ -1495,8 +1549,6 @@ function scrRoom(msg) {
       SND.play('click'); startSessionHost();
     };
   }
-  if ($('#rself')) $('#rself').onclick = function () { selfCharge(); };
-  if ($('#rsc')) $('#rsc').onchange = function () { rm.selfCharge = this.checked; hostRoomChanged(); };
   if (NET.barMsg) setNetBar(NET.barMsg);
 }
 function hostRoomChanged() { G.ppp = G.room.ppp; saveHost(); broadcast(); scrRoom(); }
@@ -1606,7 +1658,7 @@ function panelBox(v, p, isOpp) {
   var dz = dangers(v, p).map(function (d) { return '<b class="dz">' + d + '</b>'; }).join('');
   var off = G.mode !== 'ai' && G.room && G.room.seats[p] && G.room.seats[p].online === false;
   return '<div class="' + cls + '" id="pb' + p + '">' + (v.first === p ? '<i class="seon">先</i>' : '') +
-    '<div class="pn">' + esc(pl.nick) + (off ? ' <small class="offl">끊김</small>' : '') + '</div><div class="pm">' + money(G.chips[p]) + '</div><div class="pips">' + pips + '</div>' +
+    '<div class="pn">' + esc(pl.nick) + (off ? ' <small class="offl">끊김</small>' : '') + '</div><div class="pm">' + money(G.chips[p]) + '</div>' + '<div class="pips">' + pips + '</div>' +
     '<div class="pav">' + avImg(pl.av) + '<span class="plv">Lv.' + lv + '</span></div><div class="dzs">' + dz + '</div></div>';
 }
 function missionHtml(v) {
@@ -1620,7 +1672,6 @@ function missionHtml(v) {
   return '<div class="mban' + (st.done && !free ? ' done' : '') + '" id="mban"><div class="mtag">판 미션</div>' + big +
     '<div class="mdesc">' + esc(M.desc) + '</div>' + (free ? '' : '<div class="mprog">나 <b>' + st.prog + '</b> · 상대 <b>' + ost.prog + '</b></div>') + (st.done && !free ? '<i class="mstamp">달성</i>' : '') + '</div>';
 }
-function canSelf() { if (!G) return false; if (G.mode === 'guest') return !!(G.selfCharge || scToken()); if (G.mode === 'host') return isAdmin() || !!scToken(); return selfChargeOK(); }
 function myTurn(v) { v = v || UI.view; return v && v.phase !== 'end' && v.turn === G.seat; }
 function canInput() { return G && UI.view && UI.view === G.view && !UI.busy && UI.queue.length === 0 && myTurn() && !UI.auto && G.stage === 'play'; }
 
@@ -1630,7 +1681,7 @@ function renderGame(v, o) {
   if (!v || !G) return;
   var l = LAY(), seat = G.seat, opp = 1 - seat, mc = missionCards(v);
   var gm = $('#game');
-  if (!gm) { stage.innerHTML = ''; gm = document.createElement('div'); gm.id = 'game'; gm.className = 'scr felt'; stage.appendChild(gm); root.className = 'bg-felt'; }
+  if (!gm) { wipeStage(''); gm = document.createElement('div'); gm.id = 'game'; gm.className = 'scr felt'; stage.appendChild(gm); root.className = 'bg-felt'; }
   gm.style.setProperty('--cx', l.cx + 'px'); gm.style.setProperty('--pw', l.PW + 'px');
   var h = '';
   h += '<div class="arcs"></div>';
@@ -1691,7 +1742,7 @@ function renderGame(v, o) {
   // 오른쪽 패널
   h += '<div class="rpanel" style="left:' + l.panelX + 'px">' + panelBox(v, opp, true) + missionHtml(v) +
     '<div class="rbtns"><button class="ib" id="menu">☰</button><button class="gbtn green exit" id="exit">나가기</button></div>' +
-    panelBox(v, seat, false) + '<div class="ibar"><i class="rib">MENU</i><button id="sett">⚙ 설정</button>' + (isAdmin() && G.mode !== 'guest' ? '<button id="chg">💰 충전</button>' : '<button id="stat">📊 전적</button>') + (canSelf() ? '<button id="selfg" class="selfb">+1억</button>' : '') + '</div></div>';
+    panelBox(v, seat, false) + '<div class="ibar"><i class="rib">MENU</i><button id="sett">⚙ 설정</button>' + (isAdmin() && G.mode !== 'guest' ? '<button id="chg">💰 충전</button>' : '<button id="stat">📊 전적</button>') + '</div></div>';
   h += '<div id="fly"></div>';
   gm.innerHTML = h;
   bindGame();
@@ -1736,7 +1787,6 @@ function bindGame() {
   $('#menu').onclick = function () { SND.play('click'); gameMenu(); };
   $('#sett').onclick = function () { SND.play('click'); showSettings(); };
   if ($('#chg')) $('#chg').onclick = function () { SND.play('click'); chargeWho(); };
-  if ($('#selfg')) $('#selfg').onclick = function () { selfCharge(); };
   if ($('#stat')) $('#stat').onclick = function () { SND.play('click'); statPopup(); };
 }
 function onHand(id) {
@@ -1817,7 +1867,7 @@ function badgeFx(p, text, cls) { // 패널 옆 작은 배지
 function playerVoice(p) {
   var pref = SND.opt.vg || 'auto';
   if (pref !== 'auto' && p === G.seat) return pref;
-  var pl = G.players && G.players[p]; return pl ? (AVG[normAv(pl.av)] || 'f') : 'f';
+  var pl = G && G.players && G.players[p]; return pl ? (AVG[normAv(pl.av)] || 'f') : 'f';
 }
 function say(p, key) { SND.voice(key, playerVoice(p)); }
 
@@ -2452,7 +2502,6 @@ function hostOnData(conn, d) {
     if (s1 && !same && G.room.status === 'play') { conn.send({ t: 'full', msg: '이미 게임 중인 방이에요' }); setTimeout(function () { conn.close(); }, 300); return; }
     if (NET.conn && NET.conn !== conn) try { NET.conn.close(); } catch (e) {}
     NET.conn = conn; NET.lastMsg = Date.now();
-    G.guestSc = validSc(d.sc);
     G.room.seats[1] = { nick: String(d.nick || '손님').slice(0, 8), av: normAv(d.av), uid: d.uid, online: true, lv: +d.lv || 1 };
     if (!same || G.room.status !== 'play') { G.chips[1] = B(d.chips || START_MONEY).toString(); G.room.chips = G.chips; }
     G.players = G.room.seats.map(function (s) { return s ? { nick: s.nick, av: s.av, lv: s.lv } : null; });
@@ -2467,13 +2516,6 @@ function hostOnData(conn, d) {
     var e = hostAct(1, d.a); if (e) conn.send({ t: 'err', msg: e.message });
   } else if (d.t === 'seon') { seonPick(1, +d.i); }
   else if (d.t === 'emo') { showBubble(1, String(d.x).slice(0, 20)); }
-  else if (d.t === 'self') {
-    if (!((isAdmin() && G.room.selfCharge !== false) || validSc(d.sc))) return conn.send({ t: 'toast', msg: '셀프충전이 허용되지 않았어요' });
-    G.chips[1] = (B(G.chips[1]) + SELF_AMT).toString(); G.room.chips = G.chips; saveHost(); broadcast();
-    conn.send({ t: 'toast', msg: '+1억 충전! 보유 ' + money(G.chips[1]) });
-    toast((G.players[1] ? G.players[1].nick : '상대') + '님이 1억 충전했어요', 1400);
-    if (UI.view && !UI.busy) renderGame(); else if (!G.view) scrRoom();
-  }
   else if (d.t === 'leave') {
     G.room.seats[1] = null; G.players[1] = null; NET.conn = null;
     if (G.room.status === 'play') { G.room.status = 'wait'; G.state = null; G.view = null; G.stage = 'wait'; UI.view = null; closeRes(); }
@@ -2484,7 +2526,7 @@ function broadcast() {
   if (!NET.conn || !NET.conn.open || !G) return;
   var rm = G.room;
   var msg = { t: 'sync', room: { code: rm.code, ppp: rm.ppp, speed: rm.speed, missions: rm.missions, free: rm.free, status: rm.status, seats: rm.seats.map(function (s) { return s ? { nick: s.nick, av: s.av, online: s.online, lv: s.lv } : null; }), chips: G.chips, round: G.round },
-    stage: G.stage, ver: G.ver, lastWin: G.lastWin, blockMsg: G.blockMsg || '', selfCharge: !!(isAdmin() && rm.selfCharge !== false) || !!G.guestSc };
+    stage: G.stage, ver: G.ver, lastWin: G.lastWin, blockMsg: G.blockMsg || '' };
   if (G.stage === 'seon' && G.seon) msg.seon = { picks: G.seon.picks, reveal: G.seon.reveal, first: G.seon.first, cards: G.seon.reveal ? G.seon.cards : null, dl: Math.max(0, G.seonDl - Date.now()) };
   if (G.state && G.stage === 'play') { msg.view = R.view(G.state, 1); msg.dl = G.deadline ? G.deadline - Date.now() : 0; msg.dlFor = G.dlFor; }
   try { NET.conn.send(msg); } catch (e) {}
@@ -2513,8 +2555,8 @@ function guestConnect(code) {
     var opened = false;
     var to = setTimeout(function () { if (!opened && NET.conn === conn) guestLost(code, '방장과 연결이 안 돼요'); }, 12000);
     conn.on('open', function () {
-      opened = true; clearTimeout(to); NET.state = 'joined'; NET.lastMsg = Date.now(); NET.retry = 0;
-      conn.send({ t: 'hello', uid: me.uid, nick: me.nick, av: me.av, chips: me.chips, lv: level(), sc: scToken() });
+      opened = true; clearTimeout(to); NET.state = 'joined'; NET.lastMsg = Date.now(); NET.retry = 0; if (isStandalone()) localStorage.removeItem('mg_invite');
+      conn.send({ t: 'hello', uid: me.uid, nick: me.nick, av: me.av, chips: me.chips, lv: level() });
     });
     conn.on('data', function (d) { guestOnData(code, d); });
     conn.on('close', function () { if (NET.conn === conn && G && G.mode === 'guest') guestLost(code, '방장과 연결이 끊겼어요'); });
@@ -2554,35 +2596,38 @@ function guestOnData(code, d) {
     G.room = { code: rm.code, ppp: rm.ppp, speed: rm.speed, missions: rm.missions, free: rm.free, status: rm.status, seats: rm.seats, chips: rm.chips };
     G.ppp = rm.ppp; G.speed = !!rm.speed; G.missions = !!rm.missions; G.free = !!rm.free; G.chips = rm.chips; G.round = rm.round;
     G.players = rm.seats.map(function (s) { return s ? { nick: s.nick, av: s.av, lv: s.lv } : null; });
-    G.lastWin = d.lastWin; G.blockMsg = d.blockMsg; var scWas = G.selfCharge; G.selfCharge = !!d.selfCharge;
-    me.chips = rm.chips[1]; saveMe();
+    G.lastWin = d.lastWin; G.blockMsg = d.blockMsg;
+    me.chips = rm.chips[1]; saveMe(); updPm();
     if (rm.status === 'play' && d.stage === 'seon' && d.seon) {
       var mine = G.seon && G.seon.picks[1] !== null && !d.seon.picks[1] ? G.seon.picks[1] : null;
       G.stage = 'seon'; G.seon = d.seon; if (mine !== null && G.seon.picks[1] === null) G.seon.picks[1] = mine;
       G.seonDl = Date.now() + (d.seon.dl || 0);
-      if ($('.scr.room')) stage.innerHTML = '';
+      if ($('.scr.room')) wipeStage('');
       present(null, { stage: 'seon' });
     } else if (rm.status === 'play' && d.view) {
       G.stage = 'play';
       G.deadline = d.dl ? Date.now() + d.dl : 0; G.dlFor = d.dlFor;
       if (d.ver === G.ver && UI.view) { G.view = d.view; if (UI.view.phase === d.view.phase && !UI.busy) { UI.view = d.view; renderGame(); } return; }
       G.ver = d.ver; G.view = d.view;
-      if ($('.scr.room')) stage.innerHTML = '';
+      if ($('.scr.room')) wipeStage('');
       present(d.view, { round: G.round, ver: d.ver });
-      if (scWas !== G.selfCharge && UI.view && !UI.busy) renderGame();
     } else { G.view = null; G.stage = 'wait'; UI.view = null; closeRes(); scrRoom(); }
   }
 }
 
+// 설치된 앱이 초대링크로 열릴 때(launch_handler navigate-existing): 링크의 방으로
+if ('launchQueue' in window) try { window.launchQueue.setConsumer(function (p) {
+  if (!p || !p.targetURL) return; var c = (new URL(p.targetURL).searchParams.get('room') || '').toUpperCase();
+  if (/^[A-Z0-9]{6}$/.test(c) && me && me.nick && !(G && G.room && G.room.code === c) && !(G && G.view)) { if (!ls('mg_host_' + c, null)) ss('mg_invite', { code: c, ts: Date.now() }); openRoom(c); }
+}); } catch (e) {}
 // ---- 라우팅 ----
 function route() {
-  var q = new URLSearchParams(location.search), code = (q.get('room') || '').toUpperCase(), sc = q.get('sc');
-  if (sc && validSc(sc.toUpperCase())) ss('mg_selfc', sc.toUpperCase());
+  var q = new URLSearchParams(location.search), code = (q.get('room') || '').toUpperCase();
   if (!me || !me.nick) return scrNick();
-  if (/^[A-Z0-9]{6}$/.test(code)) return openRoom(code);
+  if (/^[A-Z0-9]{6}$/.test(code)) { if (!ls('mg_host_' + code, null)) ss('mg_invite', { code: code, ts: Date.now() }); return openRoom(code); }
   scrLobby();
 }
-window.__mg = { get G() { return G; }, get UI() { return UI; }, get NET() { return NET; }, get me() { return me; }, R: R, M: M$, refresh: function () { if (G && G.state) { G.view = R.view(G.state, G.seat); UI.view = G.view; renderGame(); } }, fit: fit, toStage: toStage, present: present, doAction: doAction, isAdmin: isAdmin, fx: fx, showResult: showResult, render: renderGame, prompt: promptIfNeeded, badgeFx: badgeFx, showBubble: showBubble };
+window.__mg = { inviteUrl: inviteUrl, redeemPopup: redeemPopup, codeUsed: codeUsed, get G() { return G; }, get UI() { return UI; }, get NET() { return NET; }, get me() { return me; }, R: R, M: M$, refresh: function () { if (G && G.state) { G.view = R.view(G.state, G.seat); UI.view = G.view; renderGame(); } }, fit: fit, toStage: toStage, present: present, doAction: doAction, isAdmin: isAdmin, fx: fx, showResult: showResult, render: renderGame, prompt: promptIfNeeded, badgeFx: badgeFx, showBubble: showBubble };
 route();
 
 })();</script>

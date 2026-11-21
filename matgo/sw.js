@@ -1,5 +1,5 @@
 /* 맞고 서비스워커: 앱 파일 오프라인 캐시 + 새 버전 자동 반영 */
-var VERSION = 'be61d31396a1';
+var VERSION = '61f30b527853';
 var CACHE = 'matgo-' + VERSION, RT = 'matgo-rt';
 var SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', function (e) {
