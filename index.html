@@ -23,6 +23,20 @@ main{padding:12px;max-width:720px;margin:0 auto}
 .dash .dp.pl{color:#0a7a2f}.dash .dp.mi{color:#c0392b}
 .dash .ds{font-size:clamp(10px,min(2.4vw,2.8vh),16px);color:#555;min-height:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash .tg{display:inline-block;border-radius:8px;padding:0 5px;margin:0 1px;font-weight:800;font-size:clamp(10px,min(2.4vw,2.8vh),16px)}
+.dash .hands{margin-top:6px;background:#123222;border-radius:10px;padding:6px;max-height:46vh;overflow:auto;-webkit-overflow-scrolling:touch}
+.dash .htitle{color:#f5c542;font-weight:800;font-size:clamp(13px,3.4vw,16px);margin:1px 2px 4px}
+.dash .hsum{display:flex;gap:4px;overflow-x:auto;margin:0 0 6px;padding-bottom:2px}
+.dash .hs{flex:1 0 78px;background:#fff;color:#111;border-radius:8px;padding:4px 3px;text-align:center;font-size:11px;line-height:1.25;font-weight:700}
+.dash .hsn{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash .hs .pl{color:#0a7a2f}.dash .hs .mi{color:#c0392b}
+.dash .hempty{color:#cfe;font-size:13px;padding:4px 2px}
+.dash .hcard{background:#0f1a14;border:1px solid #3a5a48;border-radius:10px;padding:6px 8px;margin:4px 0;color:#fff}
+.dash .hmeta{display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;font-size:12px;color:#cfe;font-weight:700}
+.dash .hwho{font-size:14px;font-weight:800;margin-top:2px}
+.dash .hhow{color:#f5c542;font-size:12px;font-weight:700;margin:1px 0 3px}
+.dash .hnets{display:flex;flex-wrap:wrap;gap:4px}
+.dash .hn{background:#1c3a2c;border-radius:6px;padding:2px 6px;font-size:12px;font-weight:700}
+.dash .hn.pl{color:#7dffa1}.dash .hn.mi{color:#ffb4a8}
 .pool{background:#f5c542;color:#222;border-radius:16px;padding:14px;text-align:center;margin-bottom:12px}
 .pool .lab{font-size:18px}.pool .val{font-size:34px;font-weight:800}
 .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
@@ -1017,6 +1031,101 @@ var L = (function(){
     }
     return {rows:rows, transfers:tr, sumNet: rows.reduce(function(s,r){return s+r.net;},0), shortTotal: shortT};
   }
+  // 전판 기록: 새 판은 g.hands에 금액까지 남기고, 예전 저장분은 판 기록·벌금·광값 등 이미 있는 데이터로 맞춘다
+  function howOf(res){
+    if (!res) return '-';
+    if (res.ppeokNWin) return '최종3뻑';
+    if (res.ppeokWin) return '3연뻑';
+    if (res.chongtong) return '총통';
+    var bag = {}, order = [];
+    function add(name){ if (!name || bag[name]) return; bag[name] = 1; order.push(name); }
+    (res.lines||[]).forEach(function(x){ (x.parts||[]).forEach(function(p){ add(String(p).replace(/ x\d+$/,'')); }); });
+    var tags = [];
+    if (!order.some(function(k){ return /^\d+고$/.test(k); })) tags.push('스톱');
+    order.forEach(function(k){
+      var n = 0;
+      (res.lines||[]).forEach(function(x){ var c = (x.parts||[]).filter(function(p){ return String(p).replace(/ x\d+$/,'')===k; }).length; if (c>n) n=c; });
+      tags.push((k==='흔들기' || k==='폭탄') && n>1 ? k+' '+n+'번' : k);
+    });
+    return tags.length ? tags.join(' · ') : '-';
+  }
+  function chgMax(g){ return (g.chg||[]).reduce(function(m,c){ return Math.max(m, c.id||0); }, 0); }
+  function sideNets(g, n, opt){
+    opt = opt || {};
+    var nets = g.players.map(function(){ return 0; });
+    function pay(from, to, amt){ amt = +amt||0; if (!(amt>0) || !g.players[from] || !g.players[to]) return; nets[from] -= amt; nets[to] += amt; }
+    (g.fines||[]).forEach(function(f){ if (f.r!==n) return; (f.to||[]).forEach(function(x){ pay(f.i, x.i, x.pay); }); });
+    (g.fools||[]).forEach(function(f){ if (f.r!==n) return; (f.to||[]).forEach(function(x){ pay(f.i, x.i, x.pay); }); });
+    if (!opt.skipGw) (g.gws||[]).forEach(function(f){ if (f.r!==n) return; (f.to||[]).forEach(function(x){ pay(x.i, f.i, x.pay); }); });
+    if (!opt.skipPk) (g.pks||[]).forEach(function(f){ if (f.r!==n || (opt.skipRoundPpeok && f.src==='round')) return; (f.to||[]).forEach(function(x){ pay(x.i, f.i, x.pay); }); });
+    if (!opt.skipEv) (g.evs||[]).forEach(function(f){ if (f.cancel || f.r!==n) return; (f.to||[]).forEach(function(x){ pay(x.i, f.i, x.pay); }); });
+    return nets;
+  }
+  function finishHand(g, opt){
+    opt = opt || {};
+    var n = g.round, nets;
+    if (g.handMark && g.handMark.bal && g.handMark.bal.length===g.players.length) {
+      var charged = {};
+      (g.chg||[]).forEach(function(c){ if ((c.id||0) > (g.handMark.chg||0)) charged[c.i] = (charged[c.i]||0) + (c.amt||0); });
+      nets = g.players.map(function(p,i){ return p.bal - (g.handMark.bal[i]||0) - (charged[i]||0); });
+    } else if (opt.before && opt.before.length===g.players.length) {
+      var side = sideNets(g, n, {skipRoundPpeok:true, skipEv:true});
+      nets = g.players.map(function(p,i){ return (p.bal - opt.before[i]) + side[i]; });
+    } else nets = sideNets(g, n, {});
+    var rec = { n:n, t:Date.now(), kind: opt.kind==='void' ? 'void' : 'win', winner: opt.winner||'', score: (opt.score===0 || opt.score>0) ? opt.score : null, how: opt.how || '-',
+      nets: g.players.map(function(p,i){ return {name:p.name, amt:nets[i]||0}; }) };
+    if (!g.hands) g.hands = [];
+    g.hands = g.hands.filter(function(h){ return h.n!==n; });
+    g.hands.unshift(rec);
+    g.handMark = { bal: g.players.map(function(p){ return p.bal; }), chg: chgMax(g) };
+    return rec;
+  }
+  function legacyHow(txt, kind){
+    txt = String(txt||'');
+    if (kind==='void' || txt.indexOf('무효')===0){ var xm = /x(\d+)/.exec(txt); return xm ? '나가리 · 다음 판 x'+xm[1] : '나가리'; }
+    var head = txt.split(' / ')[0];
+    var sp = head.match(/(최종3뻑|3연뻑|총통) 승/);
+    if (sp) return sp[1];
+    if (!/점 승/.test(head)) return '-';
+    var bits = [], par = head.match(/\(([^)]*)\)/g)||[];
+    par.forEach(function(p){ bits.push(p.slice(1,-1)); });
+    var rest = txt.slice(head.length);
+    ['피박','광박','멍박','흔들기','폭탄','고박'].forEach(function(k){ if (rest.indexOf(k)>=0 && bits.indexOf(k)<0) bits.push(k); });
+    if (!bits.some(function(b){ return /^\d+고$/.test(b); })) bits.unshift('스톱');
+    return bits.length ? bits.join(' · ') : '-';
+  }
+  function legacyHand(g, l){
+    var n = l.r, kind = l.t==='무효' ? 'void' : 'win', txt = String(l.txt||''), names = g.players.map(function(p){ return p.name; });
+    function whoEnd(s){ s=String(s||'').trim(); var best=''; names.forEach(function(nm){ if (nm && s.slice(-nm.length)===nm && nm.length>best.length) best=nm; }); return best; }
+    function whoStart(s){ s=String(s||'').trim(); var best=''; names.forEach(function(nm){ if (nm && s.indexOf(nm)===0 && nm.length>best.length) best=nm; }); return best; }
+    var nets = {};
+    txt.split(' → ').slice(1).forEach(function(part, i){
+      var mm = part.match(/^(.+?) ([0-9,]+)원/), from = whoEnd(txt.split(' → ')[i].split(/[,/]/).pop());
+      if (!mm) return;
+      var to = whoStart(mm[1]), amt = Math.round(String(mm[2]).replace(/,/g,''))||0;
+      if (!from || !to || !amt) return;
+      nets[from] = (nets[from]||0) - amt; nets[to] = (nets[to]||0) + amt;
+    });
+    var side = sideNets(g, n, {skipGw: txt.indexOf('광값')>=0});
+    g.players.forEach(function(p,i){ nets[p.name] = (nets[p.name]||0) + (side[i]||0); });
+    var t = 0;
+    ['fines','fools','gws','pks','evs'].forEach(function(k){ (g[k]||[]).forEach(function(r){ if (r && r.r===n && r.t>t) t=r.t; }); });
+    var sc = null, sm = txt.match(/(?:최종3뻑|3연뻑|총통) 승 \((\d+)점\)/) || txt.match(/(\d+)점 승/);
+    if (kind!=='void' && sm) sc = +sm[1];
+    return { n:n, t:t||null, kind:kind, winner: kind==='void' ? '' : (function(){ var head=txt.split(' / ')[0], best=''; names.forEach(function(nm){ if (nm && head.indexOf(nm)===0 && nm.length>best.length) best=nm; }); return best; })(), score:sc, how:legacyHow(txt, kind)||'-',
+      nets: g.players.map(function(p){ return {name:p.name, amt:nets[p.name]||0}; }) };
+  }
+  function handsView(g){
+    if (!g || !g.players) return [];
+    var saved = {}, out = [];
+    (g.hands||[]).forEach(function(h){ if (h && h.n!=null && saved[h.n]==null){ saved[h.n]=h; out.push(h); } });
+    (g.log||[]).forEach(function(l){
+      if (!l || (l.t!=='판' && l.t!=='무효') || saved[l.r]!=null) return;
+      var h = legacyHand(g, l); saved[l.r]=h; out.push(h);
+    });
+    out.sort(function(a,b){ return (b.n||0)-(a.n||0); });
+    return out;
+  }
   // ===== 보기용 링크: 상태 -> 압축(deflate) -> base64url, 해시 #v=... =====
   function b64u(bytes){ var s=''; for (var i=0;i<bytes.length;i+=0x8000) s+=String.fromCharCode.apply(null, Array.prototype.slice.call(bytes, i, i+0x8000)); return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
   function unb64u(str){ str=String(str).replace(/-/g,'+').replace(/_/g,'/'); while (str.length%4) str+='='; var s=atob(str), b=new Uint8Array(s.length); for (var i=0;i<s.length;i++) b[i]=s.charCodeAt(i); return b; }
@@ -1029,6 +1138,8 @@ var L = (function(){
       pks: (g.pks||[]).map(function(r){ return {id:r.id, t:r.t, r:r.r, i:r.i, level:r.level, points:r.points, ppp:r.ppp, each:r.each, to:r.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:r.total, dead:(r.dead||[]).slice(), src:(r.src==='round'||r.src==='text')?r.src:undefined, key:r.key?String(r.key):undefined, n:r.n>1?r.n:undefined}; }),
       fools: (g.fools||[]).map(function(r){ return {id:r.id, t:r.t, r:r.r, i:r.i, each:r.each, to:r.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:r.total}; }),
       fines: (g.fines||[]).map(function(f){ return {id:f.id, t:f.t, r:f.r, i:f.i, kind:f.kind, each:f.each, to:f.to.map(function(x){ return {i:x.i, pay:x.pay}; }), total:f.total, after:f.after}; }),
+      hands: (g.hands||[]).map(function(h){ return {n:h.n, t:h.t||0, kind:h.kind==='void'?'void':'win', winner:h.winner||'', score:(h.score===0||h.score>0)?h.score:null, how:h.how||'-', nets:(h.nets||[]).map(function(x){ return {name:String(x&&x.name||''), amt:x&&x.amt==null?null:Math.round(+x.amt||0)}; })}; }),
+      handMark: g.handMark && g.handMark.bal ? {bal:g.handMark.bal.slice(), chg:g.handMark.chg||0} : undefined,
       log: g.log.map(function(l){ return {t:l.t, r:l.r, txt:l.txt}; }) } };
   }
   function num(x){ x=+x; return isFinite(x) ? x : 0; }
@@ -1048,6 +1159,8 @@ var L = (function(){
         to:(Array.isArray(r&&r.to)?r.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; })}; }).filter(function(r){ return r.i>=0 && r.i<s.players.length; }),
       fines: (Array.isArray(s.fines)?s.fines:[]).map(function(f){ return {id:num(f&&f.id), t:num(f&&f.t), r:(f&&f.r!==undefined&&f.r!==null)?Math.floor(num(f.r)):undefined, i:Math.floor(num(f&&f.i)), kind:fineKind(f&&f.kind), each:num(f&&f.each), total:num(f&&f.total), after:num(f&&f.after),
         to:(Array.isArray(f&&f.to)?f.to:[]).map(function(x){ return {i:Math.floor(num(x&&x.i)), pay:num(x&&x.pay)}; }).filter(function(x){ return x.i>=0 && x.i<s.players.length; })}; }).filter(function(f){ return f.i>=0 && f.i<s.players.length; }),
+      hands: (Array.isArray(s.hands)?s.hands:[]).map(function(h){ return {n:Math.floor(num(h&&h.n)), t:num(h&&h.t)||null, kind:(h&&h.kind==='void')?'void':'win', winner:String(h&&h.winner||''), score:(h&&(h.score===0||num(h.score)>0))?num(h.score):null, how:String(h&&h.how||'-'), nets:(Array.isArray(h&&h.nets)?h.nets:[]).map(function(x){ return {name:String(x&&x.name||''), amt:(x&&x.amt==null)?null:num(x&&x.amt)}; })}; }).filter(function(h){ return h.n>0; }),
+      handMark: (s.handMark && Array.isArray(s.handMark.bal)) ? {bal:s.handMark.bal.map(num), chg:num(s.handMark.chg)} : undefined,
       log: (Array.isArray(s.log)?s.log:[]).map(function(l){ return {t:String(l&&l.t||''), r:num(l&&l.r), txt:String(l&&l.txt||'')}; }) } };
   }
   function encodeState(g, now){
@@ -1063,7 +1176,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {live:live,markNeg:markNeg,negFix:negFix,gwClear:gwClear,giveBack:giveBack,takeBack:takeBack,syncGwang:syncGwang,adminSet:adminSet,EVENTS:EVENTS,eventApply:eventApply,evsFix:evsFix,evRecPayer:evRecPayer,evCancel:evCancel,evTitle:evTitle,totalCounts:totalCounts,tiersOf:tiersOf,tierPpp:tierPpp,nextTier:nextTier,syncPpp:syncPpp,allIn:allIn,roundTouched:roundTouched,restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,gpDead:gpDead,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle};
+  return {live:live,markNeg:markNeg,negFix:negFix,gwClear:gwClear,giveBack:giveBack,takeBack:takeBack,syncGwang:syncGwang,adminSet:adminSet,EVENTS:EVENTS,eventApply:eventApply,evsFix:evsFix,evRecPayer:evRecPayer,evCancel:evCancel,evTitle:evTitle,totalCounts:totalCounts,tiersOf:tiersOf,tierPpp:tierPpp,nextTier:nextTier,syncPpp:syncPpp,allIn:allIn,roundTouched:roundTouched,restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,gpDead:gpDead,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle,howOf:howOf,finishHand:finishHand,handsView:handsView};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -1117,7 +1230,27 @@ function dashHtml(){
       (ro?'':'<div class="dst"><span>벌금 <b>'+c.fine+'</b></span><span>멍청이 <b>'+c.fool+'</b></span><span>광팔이 <b>'+c.gw+'</b></span><span>뻑 <b>'+c.pk+'</b></span></div>')+
       '<div class="ds"><span class="dwin">승 <b>'+c.win+'</b></span> · 충전 '+p.charges+'회</div></div>';
   });
-  return h+'</div>'+evDockHtml()+'</div>';
+  return h+'</div>'+handsHtml()+evDockHtml()+'</div>';
+}
+function handsHtml(){
+  if (!g||!g.players) return '';
+  var list=L.handsView(g), tot={};
+  g.players.forEach(function(p){ tot[p.name]={win:0,lose:0}; });
+  list.forEach(function(h){ (h.nets||[]).forEach(function(x){ if (!tot[x.name] || x.amt==null) return; if (x.amt>0) tot[x.name].win+=x.amt; else if (x.amt<0) tot[x.name].lose+=-x.amt; }); });
+  var h='<div class="hands"><div class="htitle">전판 기록</div><div class="hsum">';
+  g.players.forEach(function(p){ var t=tot[p.name], net=t.win-t.lose;
+    h+='<div class="hs"><div class="hsn">'+esc(p.name)+'</div><div class="pl">딴 '+W(t.win)+'</div><div class="mi">잃 '+W(t.lose)+'</div><div class="'+(net>=0?'pl':'mi')+'">순 '+(net>0?'+':'')+W(net)+'</div></div>'; });
+  h+='</div>';
+  if (!list.length) h+='<div class="hempty">아직 끝난 판이 없어요</div>';
+  list.forEach(function(r){
+    var when=r.t?fmtTime(r.t):'-', who=r.kind==='void'?'승자 없음':(r.winner?esc(r.winner)+' 승':'-');
+    var sc=(r.score===0||r.score>0)?r.score+'점':'-', how=r.how||'-';
+    h+='<div class="hcard"><div class="hmeta"><span>'+r.n+'판</span><span>'+esc(when)+'</span></div><div class="hwho">'+who+' · '+sc+'</div><div class="hhow">'+esc(how)+'</div><div class="hnets">';
+    (r.nets||[]).forEach(function(x){ var amt=x.amt, cls=amt>0?'pl':(amt<0?'mi':''), lab=amt==null?'-':((amt>0?'+':'')+W(amt));
+      h+='<span class="hn '+cls+'">'+esc(x.name)+' '+lab+'</span>'; });
+    h+='</div></div>';
+  });
+  return h+'</div>';
 }
 // 접은 이벤트: 대시보드(상단 고정) 아랫줄에 고정 표시, 누르면 전체 팝업 다시
 function evDockHtml(){ if(!g||!g.evNow||!g.evMin||(typeof RO!=='undefined'&&RO)) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
@@ -1161,7 +1294,7 @@ function tierBarHtml(){
   var now=Date.now(), m=Math.floor((now-g.t0)/60000), nx=L.nextTier(g, now), lim=180-m;
   return '경과 '+elHms(now-g.t0)+' · 점당 '+W(L.tierPpp(g, now))+(nx?' · '+nx.left+'분 뒤 '+W(nx.ppp):' (최종 단계)')+(lim>0?' · 3시간까지 '+Math.floor(lim/60)+'시간 '+('0'+(lim%60)).slice(-2)+'분':' · 3시간 경과');
 }
-setInterval(function(){ try{ if(!g||RO||view!=='main') return; if(pppAskCheck()){ save(); render(); } else if(L.syncPpp(g, Date.now())){ save(); render(); } else { var e=document.getElementById('tierbar'); if(e) e.innerHTML=tierBarHtml(); var d=document.getElementById('dash'); if(d) d.outerHTML=dashHtml(); } }catch(err){} }, 15000);
+setInterval(function(){ try{ if(!g||RO||view!=='main') return; if(pppAskCheck()){ save(); render(); } else if(L.syncPpp(g, Date.now())){ save(); render(); } else { var e=document.getElementById('tierbar'); if(e) e.innerHTML=tierBarHtml(); var d=document.getElementById('dash'), hs=d&&d.querySelector('.hands'), top=hs?hs.scrollTop:0; if(d){ d.outerHTML=dashHtml(); var hs2=document.querySelector('#dash .hands'); if(hs2) hs2.scrollTop=top; } } }catch(err){} }, 15000);
 // ===== 지난 정산 기록: 정산 화면을 열거나 초기화하기 전에 폰에 저장 (초기화해도 남음, 최근 50개) =====
 var HKEY='gostop_chip_hist';
 function histGet(){ try{ return JSON.parse(localStorage.getItem(HKEY))||[]; }catch(e){ return []; } }
@@ -1554,7 +1687,7 @@ function renderVoid(){
    '<button class="b2" onclick="voidGo(false)">무효, 배수 없이</button>'+
    '<button class="b3" onclick="view=\'main\';render()">취소</button></div>';
 }
-function voidGo(d){ snap(); L.voidRound(g,d); view='main'; render(); }
+function voidGo(d){ snap(); var how='나가리'+(d?' · 다음 판 x'+Math.min(8,(g.nextMult||1)*2):''); L.voidRound(g,d); L.finishHand(g,{kind:'void', how:how, winner:'', score:null}); view='main'; render(); }
 function undo(){
   if(!prev) return alert('되돌릴 것이 없어요');
   if(!confirm('방금 한 것을 되돌릴까요?')) return;
@@ -1777,9 +1910,12 @@ function applyIt(){
   var rn=Object.keys(st.rest||{}).map(function(i){return g.players[i].name;});
   var dn=Object.keys(st.dead||{}).map(function(i){return g.players[i].name;});
   if (st.order) g.order=st.order.slice();
+  var beforeBals=g.players.map(function(p){ return p.bal; });
+  var hadMark=!!(g.handMark&&g.handMark.bal&&g.handMark.bal.length===g.players.length);
   L.applyRound(g, r, L.roundNote(g, r, {score:st.score, go:st.go, giveup:!st.ct&&st.giveup, restNames:rn, deadNames:dn}));
   var evMsg='';
   if (evq){ if (evw>=0){ var er=L.eventApply(g, evw, evq, undefined, evOut); if(er) evMsg=g.players[evw].name+' 님 이벤트 성공! +'+W(er.total); } else g.log.unshift({t:'이벤트', r:g.round, txt:'이벤트 '+evq.title+' 미션 실패 (적용 안 함)'}); g.evNow=null; g.evMin=false; }
+  L.finishHand(g, {kind:'win', winner:g.players[r.winner]?g.players[r.winner].name:'', score:(r.lines&&r.lines[0])?r.lines[0].score:null, how:L.howOf(r), before:hadMark?null:beforeBals});
   st={}; view='main'; delete g.evPending; // 판 반영 직후엔 팝업 안 띄움. 다음 판 죽음·광팔이 체크 후 maybeShowEvent
   var ai=L.allIn(g); if (!ai.length && !RO && evDraw()) g.evPending=evPick(); if (ai.length){ render(); if(evMsg) alert(evMsg); alert(ai.join(', ')+' 님이 올인(칩 0원)이에요. 여기서 멈추고 정산하세요'); view='end'; } render(); if(evMsg&&!ai.length) alert(evMsg);
 }
