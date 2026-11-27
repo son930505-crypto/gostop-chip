@@ -233,9 +233,11 @@ var L = (function(){
       capScoreRaw(line);
       return line;
     });
-    lines.forEach(function(x){ var bal = g.players[x.idx].bal; x.pay = Math.min(x.raw, Math.max(0, bal)); x.capped = x.pay < x.raw; });
-    var res = { winner:winner, chongtong:true, ppeokWin:pw, ppeokNWin:pnw, lines:lines, total: lines.reduce(function(s,x){return s+x.pay;},0) };
-    res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); res.ppeok = pw ? [] : ppeokCalc(g, res, opt.ppeoks, opt.seated); return res;
+    var res = { winner:winner, chongtong:true, ppeokWin:pw, ppeokNWin:pnw, lines:lines, total:0 };
+    res.ppeok = pw ? [] : ppeokCalc(g, res, opt.ppeoks, opt.seated);
+    applyScorePay(g, lines, res.ppeok);
+    res.total = lines.reduce(function(s,x){return s+x.pay;},0);
+    res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); return res;
   }
   // 점수 정산만: 박 배수까지 적용한 뒤 한 사람이 내는 돈은 최대 10만 원. 뻑·광값·벌금·멍청이는 별도
   var SCORE_MAX = 100000;
@@ -272,14 +274,12 @@ var L = (function(){
   // JB: 광팔이 = 쉬는(죽은) 사람 → 뻑은 언제나 이번 판에 친 사람만 냄 (예전 설정값 'seated'는 읽기만 하고 쓰지 않음)
   function ppeokPayerMode(g){ return 'play'; }
   function ppeokPayerText(g){ return ppeokPayerMode(g)==='play' ? '이번 판에 친 사람만 (광팔이·죽은 사람 제외)' : '광팔이 포함 (죽은 사람 제외)'; }
-  // 점수 정산·광값 뒤 남은 잔액 안에서만 낸다 (잔액 한도). seated: 판 시작 때 잔액 있던 사람 번호들
+  // 뻑은 판돈보다 먼저, 지금 잔액 안에서만 낸다. seated: 판 시작 때 잔액 있던 사람 번호들
   function ppeokCalc(g, res, ppeoks, seated){
     var play = [res.winner].concat(res.lines.map(function(x){ return x.idx; }));
     if (!seated) seated = g.players.map(function(p,i){return i;}).filter(function(i){ return live(g, i); });
     var dpk = g.deadPick||{}, payers = ppeokPayerMode(g)==='play' ? play : seated.filter(function(j){ return !dpk[j]; });
     var bal = g.players.map(function(p){ return p.bal; });
-    res.lines.forEach(function(x){ bal[x.idx] -= x.pay; }); bal[res.winner] += res.total;
-    (res.gwang||[]).forEach(function(x){ bal[x.from] -= x.pay; bal[x.to] += x.pay; });
     var out = [];
     (ppeoks||[]).forEach(function(e){
       var n = Math.floor(+e.n||0), pts = (e.pts!==undefined && e.pts!==null) ? +e.pts : (n ? ppeokChainPts(g, e.level, n) : ppeokPoints(g, e.level)); if (!pts || play.indexOf(e.idx)<0) return;
@@ -290,6 +290,16 @@ var L = (function(){
       });
     });
     return out;
+  }
+  // 판돈은 뻑값을 잔액에 반영한 뒤에 걷는다. raw는 이미 맥심(10만 원)이 적용된 값
+  function applyScorePay(g, lines, ppeok){
+    var bal = g.players.map(function(p){ return p.bal; });
+    (ppeok||[]).forEach(function(x){ bal[x.from] -= x.pay; bal[x.to] += x.pay; });
+    lines.forEach(function(x){
+      var b = Math.max(0, bal[x.idx]||0);
+      x.pay = Math.min(x.raw, b);
+      x.capped = x.pay < x.raw;
+    });
   }
   function ppeokNote(g, res){
     var by = {}, ord = [];
@@ -330,19 +340,17 @@ var L = (function(){
       lines.forEach(function(x){ x.raw = (x.idx===gb[0].idx) ? total : 0; });
     }
     lines.forEach(capScoreRaw);
-    lines.forEach(function(x){
-      var bal = g.players[x.idx].bal;
-      x.pay = Math.min(x.raw, Math.max(0, bal));
-      x.capped = x.pay < x.raw;
-    });
-    var res = { winner:winner, lines:lines, total: lines.reduce(function(s,x){return s+x.pay;},0) };
-    res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); res.ppeok = ppeokCalc(g, res, opt.ppeoks, opt.seated); return res;
+    var res = { winner:winner, lines:lines, total:0 };
+    res.ppeok = ppeokCalc(g, res, opt.ppeoks, opt.seated);
+    applyScorePay(g, lines, res.ppeok);
+    res.total = lines.reduce(function(s,x){return s+x.pay;},0);
+    res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); return res;
   }
   function applyRound(g, res, note){
+    (res.ppeok||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
     res.lines.forEach(function(x){ g.players[x.idx].bal -= x.pay; });
     g.players[res.winner].bal += res.total;
     (res.gwang||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
-    (res.ppeok||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
     // 판 반영 때 정산된 뻑도 뻑 기록(g.pks)에 남김 → 뻑 내역에서 죽은 사람 수정 가능
     var byTo = {}, ordTo = [], dpr = g.deadPick||{};
     (res.ppeok||[]).forEach(function(x){ var k = x.to+':'+(x.n||1); if (!byTo[k]){ byTo[k] = []; ordTo.push(k); } byTo[k].push(x); });
@@ -1804,13 +1812,20 @@ function curRes(){
 }
 function renderS3(){
   var r=curRes(), h='<div class="box"><h2>'+(r.ppeokNWin?'최종3뻑 승: 결과 확인':r.ppeokWin?'3연뻑 승: 결과 확인':r.chongtong?'총통 승: 결과 확인':'3단계: 결과 확인')+'</h2>';
+  if ((r.ppeok||[]).length){
+    h+='<h2 style="margin-top:8px">1. 뻑 (먼저 정산)</h2><p style="font-size:16px;color:#555">낼 사람: '+esc(L.ppeokPayerText(g))+'</p>';
+    r.ppeok.forEach(function(x){ h+='<div class="calc pkcalc">'+esc(g.players[x.from].name)+' → '+esc(g.players[x.to].name)+': '+L.PPEOK_NAMES[x.level]+' '+x.points+'점 x '+W(g.ppp)+' = <b>'+W(x.pay)+'</b>'+(x.capped?'<br><span class="warn">잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>'; });
+    var byTo={}; r.ppeok.forEach(function(x){ byTo[x.to]=(byTo[x.to]||0)+x.pay; });
+    Object.keys(byTo).forEach(function(i){ h+='<p class="big" style="font-size:22px">'+esc(g.players[i].name)+' 뻑으로 받는 돈: '+W(byTo[i])+'</p>'; });
+    h+='<h2 style="margin-top:14px">2. 판돈 (뻑값 반영 후, 한 사람 최대 10만 원)</h2>';
+  }
   r.lines.forEach(function(x){
     var nm=esc(g.players[x.idx].name);
     if (x.gobakTo!==undefined && x.idx!==x.gobakTo){ h+='<div class="calc">'+nm+': 고박이라 안 냄 = <b>0원</b> (이 사람 몫 '+W(x.share)+'은 '+esc(g.players[x.gobakTo].name)+' 님이 대신 냄)</div>'; return; }
     var formula = x.gobakTo!==undefined ? '고박, 진 사람 몫 모두 대신 냄<br>'+r.lines.map(function(y){ return '· '+esc(g.players[y.idx].name)+' 몫: '+esc(y.shareFormula); }).join('<br>')+'<br>합계 '+r.lines.map(function(y){ return W(y.share); }).join(' + ')+' = <b>'+W(x.raw)+'</b>' : esc(x.formula).replace(/= ([^=]*)$/,'= <b>$1</b>');
     h+='<div class="calc">'+nm+': '+formula+
       (x.maxim && x.gobakTo!==undefined?'<br><span class="warn">한 사람이 내는 점수는 맥심 100,000원</span>':'')+
-      (x.capped?'<br><span class="warn">잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>';
+      (x.capped?'<br><span class="warn">'+((r.ppeok||[]).length?'뻑값을 반영한 뒤 ':'')+'잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>';
   });
   h+='<p class="big">'+esc(g.players[r.winner].name)+' 받는 돈: '+W(r.total)+'</p>';
   var chk=r.lines.reduce(function(s,x){return s+x.pay;},0);
@@ -1826,12 +1841,6 @@ function renderS3(){
   var gr=L.gwCurRecs(g);
   if (gr.length){ h+='<h2 style="margin-top:14px">광값 (이미 반영됨, 다시 계산 안 함)</h2>'; gr.forEach(function(r){ h+='<div class="calc gwdone">'+esc(L.gwText(g,r))+' = <b>+'+W(r.total)+'</b></div>'; }); }
   else if (Object.keys(st.rest||{}).length) h+='<p class="calc">광값: 0개라 없음</p>';
-  if ((r.ppeok||[]).length){
-    h+='<h2 style="margin-top:14px">뻑 (따로 정산, 낼 사람: '+esc(L.ppeokPayerText(g))+')</h2>';
-    r.ppeok.forEach(function(x){ h+='<div class="calc pkcalc">'+esc(g.players[x.from].name)+' → '+esc(g.players[x.to].name)+': '+L.PPEOK_NAMES[x.level]+' '+x.points+'점 x '+W(g.ppp)+' = <b>'+W(x.pay)+'</b>'+(x.capped?'<br><span class="warn">잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>'; });
-    var byTo={}; r.ppeok.forEach(function(x){ byTo[x.to]=(byTo[x.to]||0)+x.pay; });
-    Object.keys(byTo).forEach(function(i){ h+='<p class="big" style="font-size:22px">'+esc(g.players[i].name)+' 뻑으로 받는 돈: '+W(byTo[i])+'</p>'; });
-  }
   var bef=0, aft=0; g.players.forEach(function(p){bef+=p.bal;}); var tmp=JSON.parse(JSON.stringify(g)); L.applyRound(tmp, r); tmp.players.forEach(function(p){aft+=p.bal;});
   h+='<p style="font-size:16px;color:#2a9d8f">딜러 계좌 확인: 반영 전 칩 합계 '+W(bef)+' = 반영 후 '+W(aft)+(bef===aft?' (일치)':' (불일치)')+'</p>';
   var evq=g.evNow&&L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0];
