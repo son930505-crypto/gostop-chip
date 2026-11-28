@@ -23,10 +23,27 @@ main{padding:12px;max-width:720px;margin:0 auto}
 .dash .dp.pl{color:#0a7a2f}.dash .dp.mi{color:#c0392b}
 .dash .ds{font-size:clamp(10px,min(2.4vw,2.8vh),16px);color:#555;min-height:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash .tg{display:inline-block;border-radius:8px;padding:0 5px;margin:0 1px;font-weight:800;font-size:clamp(10px,min(2.4vw,2.8vh),16px)}
-.dash .dname{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;gap:0 3px;min-width:0}
-.dash .dname .dn{display:inline-block;max-width:100%;min-width:0}
-.dash .dlast{font-size:10px;font-weight:800;line-height:1.1;white-space:nowrap}
-.dash .dlast.pl{color:#0a7a2f}.dash .dlast.mi{color:#c0392b}
+.dash .dt{container-type:inline-size}
+.dash .dname{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:0;width:100%}
+.dash .dname .dn{display:block;max-width:100%;min-width:0}
+.dash .dlast{display:flex;flex-direction:column;align-items:center;width:100%;box-sizing:border-box;margin-top:2px;padding:2px 1px 1px;border-radius:8px;line-height:1.02;background:#f3f3f3}
+.dash .dlast.pl{background:#e4f7ea}.dash .dlast.mi{background:#fde8e6}
+.dash .dt.out .dlast{background:#ececec}
+.dash .dlastlab{font-size:clamp(9px,2.1vw,13px);font-weight:800;letter-spacing:0;line-height:1;color:#555}
+.dash .dlast.pl .dlastlab{color:#1d7a3a}.dash .dlast.mi .dlastlab{color:#b42318}
+.dash .dlastn{display:block;max-width:100%;font-size:clamp(16px,4.8vw,40px);font-weight:800;letter-spacing:-0.03em;line-height:1.02;white-space:nowrap}
+@supports (font-size:1cqw){
+  .dash .dlastn{font-size:clamp(16px,23cqw,42px)}
+}
+.dash .dlast.pl .dlastn{color:#0a7a2f}.dash .dlast.mi .dlastn{color:#c0392b}
+.dash .dbal{width:100%;margin-top:3px;padding-top:3px;border-top:1px solid #e3e3e3}
+.dash .dballab{display:block;font-size:clamp(9px,2vw,12px);font-weight:800;line-height:1;color:#666;letter-spacing:0}
+.dash .dt .db{font-size:clamp(13px,min(3.5vw,4vh),28px);letter-spacing:-0.03em}
+.dash .dt .dp{font-size:clamp(11px,min(3vw,3.4vh),18px);letter-spacing:-0.03em}
+@supports (font-size:1cqw){
+  .dash .dt .db{font-size:clamp(13px,17cqw,30px)}
+  .dash .dt .dp{font-size:clamp(11px,14cqw,20px)}
+}
 .pool{background:#f5c542;color:#222;border-radius:16px;padding:14px;text-align:center;margin-bottom:12px}
 .pool .lab{font-size:18px}.pool .val{font-size:34px;font-weight:800}
 .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
@@ -1187,7 +1204,7 @@ function dashHtml(){
     if (out) tg+='<span class="tg" style="background:#c0392b;color:#fff">0원</span>';
     if (neg) tg+='<span class="tg" style="background:#e67e22;color:#fff">마이너스</span>';
     var ro=(typeof RO!=='undefined'&&RO), c=L.totalCounts(g,i);
-    h+='<div class="dt'+(out?' out':'')+(seon===i&&!out?' dsd':'')+(gp?' dgp':'')+'"'+(ro?'':' onclick="dashTap('+i+')"')+'><div class="dname"><span class="dn">'+esc(p.name)+'</span>'+lastAmtHtml(p.name)+'</div><div class="db">'+W(p.bal)+'</div>'+
+    h+='<div class="dt'+(out?' out':'')+(seon===i&&!out?' dsd':'')+(gp?' dgp':'')+'"'+(ro?'':' onclick="dashTap('+i+')"')+'><div class="dname"><span class="dn">'+esc(p.name)+'</span>'+lastAmtHtml(p.name)+'</div><div class="dbal"><span class="dballab">보유</span><div class="db">'+W(p.bal)+'</div></div>'+
       '<div class="dp '+(net>=0?'pl':'mi')+'">'+(net>=0?'+':'-')+W(Math.abs(net))+'</div>'+
       '<div class="ds">'+(tg||'&nbsp;')+'</div>'+
       (ro?'':'<div class="dst"><span>벌금 <b>'+c.fine+'</b></span><span>멍청이 <b>'+c.fool+'</b></span><span>광팔이 <b>'+c.gw+'</b></span><span>뻑 <b>'+c.pk+'</b></span></div>')+
@@ -1200,7 +1217,7 @@ function lastAmtHtml(name){
   var nets=L.lastHandNets(g); if(!nets) return '';
   var hit=null; nets.forEach(function(x){ if(x&&x.name===name&&x.amt!=null) hit=x.amt; });
   if(hit==null) return '';
-  return '<span class="dlast '+(hit>0?'pl':hit<0?'mi':'')+'">'+amtShort(hit)+'</span>';
+  return '<span class="dlast '+(hit>0?'pl':hit<0?'mi':'')+'"><span class="dlastlab">전판</span><span class="dlastn">'+amtShort(hit)+'</span></span>';
 }
 // 접은 이벤트: 대시보드(상단 고정) 아랫줄에 고정 표시, 누르면 전체 팝업 다시
 function evDockHtml(){ if(!g||!g.evNow||!g.evMin||(typeof RO!=='undefined'&&RO)) return ''; var ev=L.EVENTS.filter(function(e){ return e.id===g.evNow; })[0]; if(!ev) return '';
