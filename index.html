@@ -23,9 +23,13 @@ main{padding:12px;max-width:720px;margin:0 auto}
 .dash .dp.pl{color:#0a7a2f}.dash .dp.mi{color:#c0392b}
 .dash .ds{font-size:clamp(10px,min(2.4vw,2.8vh),16px);color:#555;min-height:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash .tg{display:inline-block;border-radius:8px;padding:0 5px;margin:0 1px;font-weight:800;font-size:clamp(10px,min(2.4vw,2.8vh),16px)}
-.dash .dname{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;gap:0 3px;min-width:0}
-.dash .dname .dn{display:inline-block;max-width:100%;min-width:0}
-.dash .dlast{font-size:10px;font-weight:800;line-height:1.1;white-space:nowrap}
+.dash .dt{container-type:inline-size}
+.dash .dname{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:0;width:100%}
+.dash .dname .dn{display:block;max-width:100%;min-width:0}
+.dash .dlast{display:block;max-width:100%;font-size:clamp(16px,4.8vw,40px);font-weight:800;line-height:1.02;letter-spacing:-0.03em;white-space:nowrap}
+@supports (font-size:1cqw){
+  .dash .dlast{font-size:clamp(16px,23cqw,42px)}
+}
 .dash .dlast.pl{color:#0a7a2f}.dash .dlast.mi{color:#c0392b}
 .pool{background:#f5c542;color:#222;border-radius:16px;padding:14px;text-align:center;margin-bottom:12px}
 .pool .lab{font-size:18px}.pool .val{font-size:34px;font-weight:800}
