@@ -259,7 +259,7 @@ var L = (function(){
     var lines = opt.losers.map(function(l){
       var raw = sc * g.ppp;
       var line = { idx:l.idx, score:sc, mult:1, parts:[], formula: sc+'점 x '+won(g.ppp)+' = '+won(raw), raw: raw };
-      capScoreRaw(line);
+      capScoreRaw(g, line);
       return line;
     });
     var res = { winner:winner, chongtong:true, ppeokWin:pw, ppeokNWin:pnw, lines:lines, total:0 };
@@ -268,10 +268,20 @@ var L = (function(){
     res.total = lines.reduce(function(s,x){return s+x.pay;},0);
     res.gwang = gwangCalc(g, res, opt.gwangs, opt.seon); return res;
   }
-  // 점수 정산만: 박 배수까지 적용한 뒤 한 사람이 내는 돈은 최대 10만 원. 뻑·광값·벌금·멍청이는 별도
-  var SCORE_MAX = 100000;
-  function capScoreRaw(x){
-    if (x.raw > SCORE_MAX){ x.formula = (x.formula?x.formula+', ':'')+'맥심 '+won(SCORE_MAX); x.raw = SCORE_MAX; x.maxim = true; }
+  // 점수 정산만: 박 배수·고박 합산까지 적용한 뒤, 한 사람이 한 판에 내는 돈은 그 사람 첫 충전 금액까지.
+  // 첫 충전(g.chg에서 그 사람 가장 앞 기록)이 없으면 게임 충전 금액 g.limit. 둘 다 없으면 10만 원.
+  // 사람마다 첫 충전이 다르면 내는 사람 금액을 쓴다. 뻑·광값·벌금·멍청이는 이 한도 밖.
+  function chargeCap(g, i){
+    var best = null;
+    (g.chg||[]).forEach(function(c){ if (!c || c.i!==i || !(+c.amt>0)) return; if (!best || (+c.id||0)<(+best.id||0)) best = c; });
+    if (best) return Math.round(+best.amt);
+    var lim = num(g && g.limit);
+    return lim>0 ? lim : 100000;
+  }
+  function capScoreRaw(g, x){
+    var cap = chargeCap(g, x.idx);
+    x.maximCap = cap;
+    if (x.raw > cap){ x.formula = (x.formula?x.formula+', ':'')+'맥심 '+won(cap); x.raw = cap; x.maxim = true; }
   }
   // 총통 포기 진행 배수: 2배(폭탄) 또는 4배(흔들기+폭탄)
   // 뻑: 첫뻑 = 승자 점수에 +N점(기본 3점, 고 가산과 같은 단계에서 먼저 더함). 2연뻑·3연뻑 = 진 사람 전원 xM(기본 2배). 2연뻑·3연뻑은 둘 중 하나만
@@ -320,7 +330,7 @@ var L = (function(){
     });
     return out;
   }
-  // 판돈은 뻑값을 잔액에 반영한 뒤에 걷는다. raw는 이미 맥심(10만 원)이 적용된 값
+  // 판돈은 뻑값을 잔액에 반영한 뒤에 걷는다. raw는 이미 맥심(첫 충전 금액)이 적용된 값
   function applyScorePay(g, lines, ppeok){
     var bal = g.players.map(function(p){ return p.bal; });
     (ppeok||[]).forEach(function(x){ bal[x.from] -= x.pay; bal[x.to] += x.pay; });
@@ -366,9 +376,9 @@ var L = (function(){
     if (gb.length===1){
       var total = lines.reduce(function(s,x){return s+x.raw;},0);
       lines.forEach(function(x){ x.gobakTo = gb[0].idx; x.share = x.raw; x.shareFormula = x.formula; });
-      lines.forEach(function(x){ x.raw = (x.idx===gb[0].idx) ? total : 0; });
+      lines.forEach(function(x){ x.raw = (x.idx===gb[0].idx) ? total : 0; if (x.idx===gb[0].idx) x.gobakSum = total; });
     }
-    lines.forEach(capScoreRaw);
+    lines.forEach(function(x){ capScoreRaw(g, x); });
     var res = { winner:winner, lines:lines, total:0 };
     res.ppeok = ppeokCalc(g, res, opt.ppeoks, opt.seated);
     applyScorePay(g, lines, res.ppeok);
@@ -1846,14 +1856,13 @@ function renderS3(){
     r.ppeok.forEach(function(x){ h+='<div class="calc pkcalc">'+esc(g.players[x.from].name)+' → '+esc(g.players[x.to].name)+': '+L.PPEOK_NAMES[x.level]+' '+x.points+'점 x '+W(g.ppp)+' = <b>'+W(x.pay)+'</b>'+(x.capped?'<br><span class="warn">잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>'; });
     var byTo={}; r.ppeok.forEach(function(x){ byTo[x.to]=(byTo[x.to]||0)+x.pay; });
     Object.keys(byTo).forEach(function(i){ h+='<p class="big" style="font-size:22px">'+esc(g.players[i].name)+' 뻑으로 받는 돈: '+W(byTo[i])+'</p>'; });
-    h+='<h2 style="margin-top:14px">2. 판돈 (뻑값 반영 후, 한 사람 최대 10만 원)</h2>';
+    h+='<h2 style="margin-top:14px">2. 판돈 (뻑값 반영 후, 한 사람 최대 충전 금액)</h2>';
   }
   r.lines.forEach(function(x){
     var nm=esc(g.players[x.idx].name);
     if (x.gobakTo!==undefined && x.idx!==x.gobakTo){ h+='<div class="calc">'+nm+': 고박이라 안 냄 = <b>0원</b> (이 사람 몫 '+W(x.share)+'은 '+esc(g.players[x.gobakTo].name)+' 님이 대신 냄)</div>'; return; }
-    var formula = x.gobakTo!==undefined ? '고박, 진 사람 몫 모두 대신 냄<br>'+r.lines.map(function(y){ return '· '+esc(g.players[y.idx].name)+' 몫: '+esc(y.shareFormula); }).join('<br>')+'<br>합계 '+r.lines.map(function(y){ return W(y.share); }).join(' + ')+' = <b>'+W(x.raw)+'</b>' : esc(x.formula).replace(/= ([^=]*)$/,'= <b>$1</b>');
+    var formula = x.gobakTo!==undefined ? '고박, 진 사람 몫 모두 대신 냄<br>'+r.lines.map(function(y){ return '· '+esc(g.players[y.idx].name)+' 몫: '+esc(y.shareFormula); }).join('<br>')+'<br>'+(x.maxim ? '합계 '+W(x.gobakSum)+' → 맥심 <b>'+W(x.raw)+'</b>' : '합계 '+r.lines.map(function(y){ return W(y.share); }).join(' + ')+' = <b>'+W(x.raw)+'</b>') : esc(x.formula).replace(/= ([^=]*)$/,'= <b>$1</b>');
     h+='<div class="calc">'+nm+': '+formula+
-      (x.maxim && x.gobakTo!==undefined?'<br><span class="warn">한 사람이 내는 점수는 맥심 100,000원</span>':'')+
       (x.capped?'<br><span class="warn">'+((r.ppeok||[]).length?'뻑값을 반영한 뒤 ':'')+'잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>';
   });
   h+='<p class="big">'+esc(g.players[r.winner].name)+' 받는 돈: '+W(r.total)+'</p>';
