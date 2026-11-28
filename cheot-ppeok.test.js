@@ -5,49 +5,39 @@ var a = html.indexOf('<script id="logic">'), b = html.indexOf('</script>', a);
 var L = new Function(html.slice(a + '<script id="logic">'.length, b) + '\nreturn L;')();
 function assert(c, m){ if (!c) throw new Error(m || 'fail'); }
 function names(ch){ return ch.map(function(c){ return c.name+':'+c.pts+'점/단계'+c.level; }).join(' + '); }
+function fresh(){
+  var g = L.newGame(['준석','수현','세훈'], 100000, 2000);
+  g.players.forEach(function(p){ p.bal = 200000; p.invested = 100000; });
+  return g;
+}
 
-var g = L.newGame(['준석','수현','세훈'], 100000, 2000);
-g.players.forEach(function(p){ p.bal = 200000; p.invested = 100000; });
+var g = fresh();
+var s1 = L.pkMark(g, 0, 1);
+assert(names(s1.chains)==='1뻑:3점/단계1', '1뻑 '+names(s1.chains));
+var s2 = L.pkMark(g, 0, 1);
+assert(s2.chains.every(function(c){ return c.level===1; }) && names(s2.chains)==='1뻑:3점/단계1 + 2뻑:0점/단계1', '2뻑 '+names(s2.chains));
+assert(!(g.pkYeon||{})[0], '2뻑에서 연뻑 꺼짐');
+var s3 = L.pkMark(g, 0, 1);
+assert(s3.chains.length===1 && s3.chains[0].final && s3.chains[0].name==='최종3뻑' && s3.chains[0].pts===5 && s3.chains[0].level===1, '3번째 '+names(s3.chains));
+assert(!(g.pkYeon||{})[0], '최종3뻑은 연뻑 아님');
+var blocked = L.pkYeon(g, 0, 1);
+assert(!blocked.ok, '최종3뻑에서 연뻑 버튼 거절');
 
-var a1 = L.pkMark(g, 0, 1);
-assert(names(a1.chains)==='첫뻑:3점/단계1', '첫 + '+names(a1.chains));
-var noYeon = L.pkYeon(g, 1, 1);
-assert(!noYeon.ok, '첫뻑 전 연뻑은 거절 '+(noYeon.msg||''));
+var win = L.calcRound(g, 0, {chongtong:true, ppeokNWin:true, losers:[{idx:1},{idx:2}]});
+assert(win.ppeokNWin && (!win.ppeok || !win.ppeok.length), '최종3뻑은 곁가지 뻑 없음');
+assert(win.lines.length===2 && win.lines.every(function(x){ return x.score===5 && x.pay===10000 && x.level!==2; }), '각 10000 '+win.lines.map(function(x){ return x.pay; }).join());
+assert(win.total===20000, '승자 '+win.total);
+var sum0 = g.players.reduce(function(s,p){ return s+p.bal; }, 0);
+var copy = JSON.parse(JSON.stringify(g));
+L.applyRound(copy, win);
+assert(copy.players.map(function(p){ return p.bal; }).join()==='220000,190000,190000', '반영 '+copy.players.map(function(p){ return p.bal; }).join());
+assert(copy.players.reduce(function(s,p){ return s+p.bal; }, 0)===sum0, '합계');
 
-var a2 = L.pkMark(g, 0, 1);
-assert(a2.chains.every(function(c){ return c.level===1; }), '두번째 +도 연뻑 아님 '+names(a2.chains));
-assert(names(a2.chains)==='첫뻑:3점/단계1 + 1번째:3점/단계1', names(a2.chains));
-
-var a3 = L.pkMark(g, 0, 1);
-assert(a3.chains.every(function(c){ return c.level===1; }), '+만으로는 2연뻑이 안 됨 '+names(a3.chains));
-assert(a3.chains[2].name==='2번째' && a3.chains[2].pts===0, '2번째는 배수 없음 '+names(a3.chains));
-// 따로 뻑 2번째에서 + : 2연뻑이 아니라 3번째 일반 뻑
-var a4 = L.pkMark(g, 0, 1);
-assert(!(g.pkYeon||{})[0], '연뻑 버튼은 그대로 꺼짐');
-assert(a4.chains.every(function(c){ return c.level===1 && c.name!=='2연뻑' && c.name!=='3연뻑'; }), '2번째 다음 + '+names(a4.chains));
-assert(a4.chains.some(function(c){ return c.name==='3번째' && c.pts===5; }), '3번째 일반 뻑 '+names(a4.chains));
-L.pkMark(g, 0, -1);
-
-// 연뻑이 아닌 두 뻑 정산: 각 6,000원, 2연뻑 없음
-L.pkMark(g, 0, -1);
-var plain = L.pkChains(g, 0);
-var resP = L.calcRound(g, 1, {score:3, go:0, losers:[{idx:0},{idx:2}], ppeoks:plain.map(function(c){ return {idx:0, level:c.level, n:c.n, pts:c.pts, cheot:!!c.cheot}; }), seated:[0,1,2]});
-assert(resP.ppeok.every(function(x){ return x.pay===6000 && x.level===1; }), '일반 뻑 6000');
-assert(!resP.ppeok.some(function(x){ return x.level>1; }), '배수 없음');
-
-// 첫뻑부터 연뻑: 버튼으로 2연뻑이면 6점 = 12,000원 한 번
-var gy = L.newGame(['준석','수현','세훈'], 100000, 2000);
-gy.players.forEach(function(p){ p.bal = 200000; p.invested = 100000; });
+var gy = fresh();
 L.pkMark(gy, 0, 1);
-var y2 = L.pkYeon(gy, 0, 1);
-assert(y2.chains.length===1 && y2.chains[0].name==='2연뻑' && y2.chains[0].level===2 && y2.chains[0].pts===6, '2연뻑 '+names(y2.chains));
-var resY = L.calcRound(gy, 1, {score:3, go:0, losers:[{idx:0},{idx:2}], ppeoks:y2.chains.map(function(c){ return {idx:0, level:c.level, n:c.n, pts:c.pts}; }), seated:[0,1,2]});
-assert(resY.ppeok.length===2 && resY.ppeok.every(function(x){ return x.pay===12000 && x.level===2; }), '연뻑 12000 '+resY.ppeok.map(function(x){ return x.pay; }));
-var y3 = L.pkYeon(gy, 0, 1);
-assert(y3.chains[0].name==='3연뻑' && y3.chains[0].pts===12, '3연뻑 '+names(y3.chains));
-L.pkYeon(gy, 0, -1);
-assert(L.pkChains(gy, 0)[0].name==='2연뻑', '연뻑 -');
-L.pkYeon(gy, 0, -1);
-assert(L.pkChains(gy, 0).every(function(c){ return c.level===1; }), '연뻑 끄면 일반 횟수');
+var y = L.pkYeon(gy, 0, 1);
+assert(y.chains.length===1 && y.chains[0].name==='2연뻑' && y.chains[0].level===2 && y.chains[0].pts===6, '연뻑 '+names(y.chains));
+var resY = L.calcRound(gy, 1, {score:3, go:0, losers:[{idx:0},{idx:2}], ppeoks:y.chains.map(function(c){ return {idx:0, level:c.level, n:c.n, pts:c.pts}; }), seated:[0,1,2]});
+assert(resY.ppeok.length===2 && resY.ppeok.every(function(x){ return x.pay===12000 && x.level===2; }), '2연뻑 12000');
 
-console.log('ok plain', names(a2.chains), 'yeon', names(y2.chains), 'pay', resY.ppeok[0].pay);
+console.log('ok', names(s1.chains), '→', names(s2.chains), '→', names(s3.chains), 'win', win.total);
