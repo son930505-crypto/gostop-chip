@@ -137,20 +137,45 @@ var L = (function(){
   function splitInt(total, ws){ var sw = ws.reduce(function(a,b){ return a+b; }, 0); if (!(total>0) || !(sw>0)) return ws.map(function(){ return 0; });
     var raw = ws.map(function(w){ return total*w/sw; }), out = raw.map(Math.floor), rem = total - out.reduce(function(a,b){ return a+b; }, 0);
     raw.map(function(x,k){ return {k:k, f:x-Math.floor(x)}; }).sort(function(a,b){ return b.f-a.f || a.k-b.k; }).forEach(function(x){ if (rem>0){ out[x.k]++; rem--; } }); return out; }
-  // 최종 정산 부족분만 500원 단위. floor(몫/500)*500 후 남은 500원 조각은 소수 큰 순(동점이면 장부 큰 순, 그다음 앞 번호). 500 미만 나머지는 가장 큰 받는 사람에게.
+  // 돈의 최소 단위는 500원. 0 이하는 0. 설정된 금액(벌금·점당·광값)은 500원 단위로 맞추고, 양수면 최소 500원.
+  function floor500(n){ n = Math.floor(+n); if (!isFinite(n) || n<=0) return 0; return Math.floor(n/500)*500; }
+  function round500(n){ n = Math.round(+n); if (!isFinite(n) || n===0) return 0; var s = n<0?-1:1; n = Math.abs(n); var u = Math.floor(n/500), r = n-u*500; return s*(u*500+(r>=250?500:0)); }
+  function unitAmt(n){ var u = round500(n); return (n>0 && u<500) ? 500 : (u>0 ? u : 0); }
+  // 잔액이 모자라면 500원 단위로만 낸다 (100원·10원 짜투리는 옮기지 않음)
+  function capPay(each, bal){ return Math.min(floor500(each), floor500(Math.max(0, bal))); }
+  // 합계가 500으로 나누어떨어지면 각 금액을 500원 칸에 맞추고 합은 그대로. 짜투리 500원 조각은 소수 큰 순(동점이면 앞 번호).
+  function align500(vals){
+    var unit=500, sum=0, i, flo=vals.map(function(v){ v=+v||0; sum+=v; return Math.floor(v/unit)*unit; });
+    var pool=sum-flo.reduce(function(a,b){ return a+b; },0);
+    var ord=vals.map(function(v,k){ return {k:k, f:(+v||0)-flo[k]}; }).sort(function(a,b){ return b.f-a.f || a.k-b.k; });
+    var out=flo.slice();
+    for (var k=0;k<ord.length && pool>=unit;k++){ out[ord[k].k]+=unit; pool-=unit; }
+    return out;
+  }
+  // 최종 정산 부족분. 500원으로 안 나누어떨어지면 250원 이상은 올리고 그 미만은 버린 뒤, 500원 조각을 소수 큰 순(동점이면 장부 큰 순, 그다음 앞 번호)으로 나눔.
   function split500(total, ws){
     var n=ws.length, out=ws.map(function(){ return 0; }); if(!n||!(total>0)) return out;
     var sw=0; for(var i=0;i<n;i++) sw+=ws[i]; if(!(sw>0)) return out;
-    var unit=500, rem=((total%unit)+unit)%unit, bulk=total-rem, units=Math.round(bulk/unit);
+    var unit=500, rem=((total%unit)+unit)%unit, rounded=total-rem+(rem>=250?unit:0);
+    if(!(rounded>0)) return out;
+    var units=Math.round(rounded/unit);
     var raw=ws.map(function(w){ return units*w/sw; }), got=raw.map(function(x){ return Math.floor(x); });
     var left=units-got.reduce(function(a,b){ return a+b; },0);
     raw.map(function(x,k){ return {k:k, f:x-Math.floor(x), w:ws[k]}; }).sort(function(a,b){ return b.f-a.f || b.w-a.w || a.k-b.k; }).forEach(function(x){ if(left>0){ got[x.k]++; left--; } });
     for(var j=0;j<n;j++) out[j]=got[j]*unit;
-    if(rem){ var best=0; for(var t=1;t<n;t++) if(ws[t]>ws[best]||(ws[t]===ws[best]&&t<best)) best=t; out[best]+=rem; }
     return out;
   }
-  function overOf(from, pre, to){ var tot = to.reduce(function(s,x){ return s+x.pay; }, 0), over = Math.max(0, tot - Math.max(0, pre)); if (!over) return [];
-    var cut = splitInt(over, to.map(function(x){ return x.pay; })); return to.map(function(x,k){ return {f:from, t:x.i, a:cut[k]}; }).filter(function(x){ return x.a>0; }); }
+  // 0원 아래로 나간 돈은 받는 사람마다 그 사람 몫에서 바로 적는다 (1원으로 다시 나누지 않음). 가진 돈으로 낸 몫은 장부에 없음.
+  function overOf(from, pre, to){
+    var covered = floor500(Math.max(0, pre)), out = [];
+    (to||[]).forEach(function(x){
+      var pay = floor500(x.pay); if (!(pay>0)) return;
+      var fromBal = Math.min(pay, covered), over = pay - fromBal;
+      covered -= fromBal;
+      if (over>0) out.push({f:from, t:x.i, a:over});
+    });
+    return out;
+  }
   function oweRec(g, rec, sign){ (rec && rec.over || []).forEach(function(x){ if (!g.owe) g.owe = {}; var m = g.owe[x.f] = g.owe[x.f] || {}; m[x.t] = (m[x.t]||0) + sign*x.a; if (m[x.t]<=0) delete m[x.t]; if (!Object.keys(m).length) delete g.owe[x.f]; }); if (g.owe && !Object.keys(g.owe).length) delete g.owe; }
   function active(g, i){ return live(g, i); }
   // 예전 버전 저장분(판 도중 잔액 한도로 0원이 된 사람): 이번 판(r = g.round+1)에 벌금·멍청이·광값·뻑으로 돈을 낸 기록이 있으면
@@ -212,7 +237,7 @@ var L = (function(){
     Object.keys(dead||{}).forEach(function(i){ i=+i; var k = order.indexOf(i); if (dead[i] && (k>0 || (g.admin && k===0)) && !rest[i]) dd[i] = true; });
     return {order: order, seon: order[0], rest: rest, dead: dd, conflict: conflict, picked: picked};
   }
-  function gwangPriceOf(g){ return g.gwangPrice>0 ? g.gwangPrice : 1500; }
+  function gwangPriceOf(g){ return unitAmt(g.gwangPrice>0 ? g.gwangPrice : 1500) || 1500; }
   // 광값 낼 사람: 'noSeon'(기본) = 선 제외, 두 번째·세 번째 주자만 / 'all' = 선 포함 치는 사람 모두. 죽은 사람은 항상 제외
   function gwangMode(g){ return g.gwangPayer==='all' ? 'all' : 'noSeon'; }
   function gwangPayerText(g){ return gwangMode(g)==='all' ? '선 포함 치는 사람 모두 (죽은 사람 제외)' : '선 제외, 두 번째·세 번째 주자만 (죽은 사람 제외)'; }
@@ -227,9 +252,9 @@ var L = (function(){
     var out = [];
     (gwangs||[]).forEach(function(r){
       var cnt = Math.max(0, Math.floor(+r.count||0)); if (!cnt) return;
-      var each = cnt * price;
+      var each = unitAmt(cnt * price) || floor500(cnt * price);
       play.filter(function(i){ return i!==r.idx && !(noSeon && i===seon); }).forEach(function(i){
-        var pay = Math.min(each, Math.max(0, bal[i])); bal[i] -= pay;
+        var pay = capPay(each, bal[i]); bal[i] -= pay;
         out.push({from:i, to:r.idx, count:cnt, price:price, each:each, pay:pay, capped: pay<each});
       });
     });
@@ -256,9 +281,10 @@ var L = (function(){
   // 총통 승: 정해진 점수(기본 10점) x 점당 금액, 다른 배수 없음
   function chongtongRound(g, winner, opt){
     var pnw = !!opt.ppeokNWin && !opt.ppeokWin, pw = !!opt.ppeokWin || pnw, sc = pnw ? ppeokNPts(g, 3) : (opt.ppeokWin ? ppeokPoints(g, 3) : (g.ctScore||10));
+    var ppp = unitAmt(g.ppp) || g.ppp;
     var lines = opt.losers.map(function(l){
-      var raw = sc * g.ppp;
-      var line = { idx:l.idx, score:sc, mult:1, parts:[], formula: sc+'점 x '+won(g.ppp)+' = '+won(raw), raw: raw };
+      var raw = sc * ppp;
+      var line = { idx:l.idx, score:sc, mult:1, parts:[], formula: sc+'점 x '+won(ppp)+' = '+won(raw), raw: raw };
       capScoreRaw(g, line);
       return line;
     });
@@ -274,11 +300,12 @@ var L = (function(){
   function chargeCap(g, i){
     var best = null;
     (g.chg||[]).forEach(function(c){ if (!c || c.i!==i || !(+c.amt>0)) return; if (!best || (+c.id||0)<(+best.id||0)) best = c; });
-    if (best) return Math.round(+best.amt);
-    var lim = num(g && g.limit);
+    if (best) return unitAmt(best.amt) || round500(best.amt);
+    var lim = unitAmt(g && g.limit);
     return lim>0 ? lim : 100000;
   }
   function capScoreRaw(g, x){
+    if (x.raw>0) x.raw = round500(x.raw);
     var cap = chargeCap(g, x.idx);
     x.maximCap = cap;
     if (x.raw > cap){ x.formula = (x.formula?x.formula+', ':'')+'맥심 '+won(cap); x.raw = cap; x.maxim = true; }
@@ -322,9 +349,9 @@ var L = (function(){
     var out = [];
     (ppeoks||[]).forEach(function(e){
       var n = Math.floor(+e.n||0), pts = (e.pts!==undefined && e.pts!==null) ? +e.pts : (n ? ppeokChainPts(g, e.level, n) : ppeokPoints(g, e.level)); if (!pts || play.indexOf(e.idx)<0) return;
-      var each = pts * g.ppp;
+      var each = unitAmt(pts * (unitAmt(g.ppp) || g.ppp));
       payers.filter(function(i){ return i!==e.idx; }).forEach(function(i){
-        var pay = Math.min(each, Math.max(0, bal[i])); bal[i] -= pay; bal[e.idx] += pay;
+        var pay = capPay(each, bal[i]); bal[i] -= pay; bal[e.idx] += pay;
         var o = {from:i, to:e.idx, level:Math.floor(+e.level), points:pts, each:each, pay:pay, capped: pay<each}; if (n) o.n = n; out.push(o);
       });
     });
@@ -335,8 +362,8 @@ var L = (function(){
     var bal = g.players.map(function(p){ return p.bal; });
     (ppeok||[]).forEach(function(x){ bal[x.from] -= x.pay; bal[x.to] += x.pay; });
     lines.forEach(function(x){
-      var b = Math.max(0, bal[x.idx]||0);
-      x.pay = Math.min(x.raw, b);
+      var b = floor500(Math.max(0, bal[x.idx]||0));
+      x.pay = Math.min(round500(x.raw), b);
       x.capped = x.pay < x.raw;
     });
   }
@@ -366,9 +393,9 @@ var L = (function(){
       if (l.pi){ m*=2; f.push([2,'피박']); }
       if (l.gwang){ m*=2; f.push([2,'광박']); }
       if (meongAll){ m*=2; f.push([2,'멍박']); }
-      var base = gs.score * g.ppp, raw = base * m;
+      var ppp = unitAmt(g.ppp) || g.ppp, base = gs.score * ppp, raw = base * m;
       var sc = (opt.go>=1) ? gs.score+'점('+opt.score+'점+'+opt.go+'고)' : gs.score+'점';
-      var formula = sc+' x '+won(g.ppp)+' = '+won(base) + (f.length ? f.map(function(x){return ', x'+x[0]+'('+x[1]+')';}).join('') + ' = '+won(raw) : '');
+      var formula = sc+' x '+won(ppp)+' = '+won(base) + (f.length ? f.map(function(x){return ', x'+x[0]+'('+x[1]+')';}).join('') + ' = '+won(raw) : '');
       return { idx:l.idx, score:gs.score, mult:m, parts:f.map(function(x){return x[1]+' x'+x[0];}), formula:formula, raw: raw };
     });
     // 고박 (모바일 룰): 고를 불렀다가 진 사람이 다른 진 사람 몫(그 사람 피박·광박·멍박 등 배수 포함)까지 혼자 다 냄. 추가 배수 없음
@@ -417,7 +444,7 @@ var L = (function(){
   // 충전: 충전 내역(chg)에 시각·사람·금액·충전 후 잔액을 남긴다
   // amt 생략 시 g.limit (예전 방식 호환). 화면에서는 버튼 금액(1만·5만·10만)을 넘긴다
   function charge(g, i, now, amt){
-    amt = (+amt > 0) ? Math.round(+amt) : g.limit;
+    amt = (+amt > 0) ? (unitAmt(+amt)||Math.round(+amt)) : unitAmt(g.limit);
     var p = g.players[i]; p.bal += amt; p.charges++; p.invested += amt; if (p.bal>0 && g.owe && g.owe[i]){ delete g.owe[i]; if (!Object.keys(g.owe).length) delete g.owe; }
     if (!g.chg) g.chg = [];
     g.chgSeq = Math.max(g.chgSeq||0, g.chg.reduce(function(m,c){ return Math.max(m, c.id); }, 0)) + 1;
@@ -429,10 +456,10 @@ var L = (function(){
   // 충전 취소: 그 충전분이 아직 잔액에 남아 있을 때만 (판에서 쓴 칩은 취소 불가)
   function canUndoCharge(g, id){
     var c = (g.chg||[]).filter(function(x){ return x.id===id; })[0];
-    return !!c && g.players[c.i] && (g.players[c.i].bal >= c.amt || (!!g.admin && g.players[c.i].bal > 0));
+    return !!c && g.players[c.i] && (g.players[c.i].bal >= c.amt || (!!g.admin && floor500(g.players[c.i].bal) >= 500));
   }
   // ===== 시간대별 점당 자동 적용: 첫 충전 시각(g.t0) 기준. 기본 30분까지 1,000 → 1시간30분까지 1,500 → 이후 2,000. 판이 시작될 때(이번 판에 즉시 정산이 없을 때)만 바꿈 =====
-  function tiersOf(g){ var t = g.tiers; return (t && t.length===3) ? t : [{min:30, ppp:1000}, {min:90, ppp:1500}, {min:null, ppp:2000}]; }
+  function tiersOf(g){ var t = g.tiers, src = (t && t.length===3) ? t : [{min:30, ppp:1000}, {min:90, ppp:1500}, {min:null, ppp:2000}]; return src.map(function(x){ return {min:x.min, ppp:unitAmt(x.ppp)||500}; }); }
   function tierPpp(g, now){ if (g.tierOn!==true || !g.t0) return g.ppp; var m = (now - g.t0)/60000, t = tiersOf(g); return m < t[0].min ? t[0].ppp : (m < t[1].min ? t[1].ppp : t[2].ppp); }
   function nextTier(g, now){ if (g.tierOn!==true || !g.t0) return null; var m = (now - g.t0)/60000, t = tiersOf(g); if (m < t[0].min) return {left:Math.ceil(t[0].min-m), ppp:t[1].ppp}; if (m < t[1].min) return {left:Math.ceil(t[1].min-m), ppp:t[2].ppp}; return null; }
   function roundTouched(g){ return (g.pks||[]).some(function(x){ return x.r===g.round+1; }) || (g.gwCur||[]).length>0; }
@@ -446,13 +473,13 @@ var L = (function(){
   // 대시보드용 누적 횟수 (판이 바뀌어도 초기화 안 됨): 벌금·멍청이·광팔이·뻑(반영된 기록 + 이번 판에 입력 중인 뻑)
   function syncGwang(g){ if (g.ppp>0) g.gwangPrice = g.ppp; return g.gwangPrice; }
   // 관리자 모드: 잔액·넣은 돈 직접 수정
-  function adminSet(g, i, bal, inv){ var p = g.players[i]; if (!p || !g.admin) return false; bal = Math.max(0, Math.floor(+bal)); if (!isFinite(bal)) return false;
-    var ob = p.bal, oi = p.invested; p.bal = bal; if (inv!==undefined && inv!=='' && isFinite(+inv)) p.invested = Math.max(0, Math.floor(+inv));
+  function adminSet(g, i, bal, inv){ var p = g.players[i]; if (!p || !g.admin) return false; bal = Math.floor(+bal); if (!isFinite(bal)) return false; bal = round500(Math.max(0, bal));
+    var ob = p.bal, oi = p.invested; p.bal = bal; if (inv!==undefined && inv!=='' && isFinite(+inv)) p.invested = round500(Math.max(0, Math.floor(+inv)));
     g.log.unshift({t:'관리자', r:g.round, txt:'관리자 수정: '+p.name+' 잔액 '+won(ob)+' → '+won(p.bal)+(p.invested!==oi?', 넣은 돈 '+won(oi)+' → '+won(p.invested):'')}); return true; }
   // 관리자 모드: 받은 돈을 이미 써서 다 못 되돌릴 때 잔액 한도 안에서만 되돌림 (잔액 음수 없음, 합계 보존)
   // giveBack: from이 to[] 각자에게 x.pay씩 돌려주되 from 잔액 한도까지 / takeBack: to[] 각자가 받은 x.pay를 자기 잔액 한도까지 dest에게 돌려줌
-  function giveBack(g, from, to){ var left = Math.max(0, g.players[from].bal), back = 0; (to||[]).forEach(function(x){ if (!g.players[x.i]) return; var a = Math.min(x.pay, left); g.players[x.i].bal += a; left -= a; back += a; }); g.players[from].bal -= back; return back; }
-  function takeBack(g, to, dest){ var back = 0; (to||[]).forEach(function(x){ var q = g.players[x.i]; if (!q) return; var a = Math.min(x.pay, Math.max(0, q.bal)); q.bal -= a; back += a; }); g.players[dest].bal += back; return back; }
+  function giveBack(g, from, to){ var left = Math.max(0, g.players[from].bal), back = 0; (to||[]).forEach(function(x){ if (!g.players[x.i]) return; var a = capPay(x.pay, left); g.players[x.i].bal += a; left -= a; back += a; }); g.players[from].bal -= back; return back; }
+  function takeBack(g, to, dest){ var back = 0; (to||[]).forEach(function(x){ var q = g.players[x.i]; if (!q) return; var a = capPay(x.pay, q.bal); q.bal -= a; back += a; }); g.players[dest].bal += back; return back; }
   // 관리자 모드: 그 사람의 이번 판 광값 정산을 모두 되돌리고(잔액 한도) 광팔이·자동 죽음 체크를 풂 → 광팔이 변경·해제 가능
   function gwClear(g, i){ var recs = gwCurRecs(g).filter(function(r){ return r.i===i; }), back = 0;
     recs.slice().reverse().forEach(function(r){ oweRec(g, r, -1); back += giveBack(g, r.i, r.to); g.gws.splice(g.gws.indexOf(r), 1); g.gwCur.splice(g.gwCur.indexOf(r.id), 1); });
@@ -481,8 +508,8 @@ var L = (function(){
     var p = g.players[i]; if (!p || !ev) return null; skip = skip || {}; // skip: 이번 판 죽은 사람·광팔이(이벤트 안 냄)
     // mult: 인게임 미션 배수 → 배수만큼 점 단위로 정산 / pts: 족보·고 +점 → 점 x 점당
     var units = ev.kind==='mult' ? (ev.mult||1) : (ev.pts||0);
-    var each = Math.floor(units * g.ppp), to = [];
-    g.players.forEach(function(q, j){ if (j===i || q.bal<=0 || skip[j]) return; var pay = Math.min(each, q.bal); q.bal -= pay; p.bal += pay; to.push({i:j, pay:pay}); });
+    var each = unitAmt(units * (unitAmt(g.ppp) || g.ppp)), to = [];
+    g.players.forEach(function(q, j){ if (j===i || q.bal<=0 || skip[j]) return; var pay = capPay(each, q.bal); if (!pay) return; q.bal -= pay; p.bal += pay; to.push({i:j, pay:pay}); });
     var total = to.reduce(function(s,x){ return s+x.pay; }, 0);
     if (!g.evs) g.evs = []; g.evSeq = Math.max(g.evSeq||0, g.evs.reduce(function(m,x){ return Math.max(m, x.seq||0); }, 0)) + 1;
     var rec = {seq:g.evSeq, t:now||Date.now(), r:g.round, i:i, id:ev.id, title:ev.title, kind:ev.kind||'pts', units:units, each:each, to:to, total:total, out:Object.keys(skip).map(Number).filter(function(j){ return skip[j] && j!==i; })}; g.evs.push(rec);
@@ -506,7 +533,7 @@ var L = (function(){
       txt = '이벤트 수정: '+tag+' - '+nm(j)+' 빠짐 → '+won(bk)+' 돌려줌'+(bk<x.pay?' (관리자: 잔액 한도)':'');
     } else {
       if (x) return {ok:false, msg:nm(j)+' 님은 이미 낸 사람이에요'};
-      var pay = g.admin ? rec.each : Math.min(rec.each, Math.max(0, g.players[j].bal));
+      var pay = g.admin ? (unitAmt(rec.each)||floor500(rec.each)) : capPay(rec.each, g.players[j].bal);
       if (!pay) return {ok:false, msg:nm(j)+' 님은 잔액이 0원이라 낼 수 없어요'};
       g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay; if (g.admin) markNeg(g, [j]);
       var k = rec.out.indexOf(j); if (k>=0) rec.out.splice(k, 1);
@@ -532,7 +559,7 @@ var L = (function(){
   function undoCharge(g, id){
     var c0 = (g.chg||[]).filter(function(x){ return x.id===id; })[0];
     if (g.admin && c0 && g.players[c0.i] && g.players[c0.i].bal < c0.amt){ var ka = (g.chg||[]).map(function(x){ return x.id; }).indexOf(id), ca = g.chg[ka], pa = ca && g.players[ca.i]; if (!pa) return false;
-      var take = Math.min(ca.amt, Math.max(0, pa.bal)); if (!take) return false;
+      var take = capPay(ca.amt, pa.bal); if (!take) return false;
       pa.bal -= take; pa.invested -= take; ca.amt -= take; ca.after = Math.max(0, ca.after - take);
       g.log.unshift({t:'충전 취소', r:g.round, txt:'관리자: '+pa.name+' 충전 일부 취소 -'+won(take)+' (남은 칩 한도, 잔액 '+won(pa.bal)+')'}); return true; }
     if (!canUndoCharge(g, id)) return false;
@@ -545,7 +572,7 @@ var L = (function(){
   // 예전 저장분의 욕(swear)·영어(eng) 기록도 그대로 읽고, 모두 '벌금'으로 표시·합산
   var FINE_KINDS = {fine:'벌금', swear:'벌금', eng:'벌금'};
   function fineKind(k){ return (k==='swear'||k==='eng') ? k : 'fine'; }
-  function fineAmtOf(g){ return num(g.fineAmt)>0 ? num(g.fineAmt) : 500; }
+  function fineAmtOf(g){ return unitAmt(num(g.fineAmt)>0 ? num(g.fineAmt) : 500) || 500; }
   // 미리 계산 (반영 안 함). 잔액 한도: 뻑 정산과 같은 방식으로 받는 사람 순서대로 남은 잔액 안에서만 냄
   function finePreview(g, i, kind){
     var each = fineAmtOf(g), bal = g.players[i].bal, to = [];
@@ -624,7 +651,7 @@ var L = (function(){
   }
   // ===== 멍청이: 카드 + 한 번마다 누른 사람(멍청이)이 잔액 있는 다른 사람 전원(죽음·광팔이·선 상관없이) 각자에게 멍청이 금액(기본 5,000원)을 즉시 줌 =====
   // 멍청이 잔액이 모자라면 벌금과 같은 방식: 사람 순서대로 남은 잔액만큼만. - 는 그 사람의 가장 최근 1건을 정확히 되돌림(받은 사람이 이미 썼으면 막힘). 판 반영 때 다시 계산 안 함
-  function foolAmtOf(g){ return num(g.foolAmt)>0 ? num(g.foolAmt) : 3000; }
+  function foolAmtOf(g){ return unitAmt(num(g.foolAmt)>0 ? num(g.foolAmt) : 3000) || 3000; }
   // 카드 횟수와 - 대상은 이번 판(r = g.round+1) 것만 → 판 반영·무효로 다음 판이 되면 0으로 보임(돈·기록은 그대로, 광팔이 +와 같은 방식)
   function foolCur(g, i){ return (g.fools||[]).filter(function(x){ return x.i===i && x.r===g.round+1; }); }
   function foolCount(g, i){ return foolCur(g, i).length; }
@@ -661,9 +688,9 @@ var L = (function(){
   function pkPayers(g, i){ var dp = g.deadPick||{}; return g.players.map(function(p,j){return j;}).filter(function(j){ return j!==i && live(g, j) && !dp[j] && !(ppeokPayerMode(g)==='play' && g.gpPick===j); }); }
   function pkFind(g, id){ if (id===undefined || id===null || id==='') return null; return (g.pks||[]).filter(function(x){ return x.id===id || +x.id===+id; })[0] || null; }
   function pkApplyNew(g, i, level, now, ppp, exactTo){
-    var each = ppeokPoints(g, level) * ppp, to = [];
+    var each = unitAmt(ppeokPoints(g, level) * (unitAmt(ppp) || ppp)), to = [];
     if (exactTo) to = exactTo.map(function(x){ return {i:x.i, pay:x.pay}; });
-    else pkPayers(g, i).forEach(function(j){ to.push({i:j, pay: Math.min(each, Math.max(0, g.players[j].bal))}); });
+    else pkPayers(g, i).forEach(function(j){ var pay = capPay(each, g.players[j].bal); if (pay) to.push({i:j, pay:pay}); });
     to.forEach(function(x){ g.players[x.i].bal -= x.pay; g.players[i].bal += x.pay; });
     if (!g.pks) g.pks = [];
     g.pkSeq = Math.max(g.pkSeq||0, g.pks.reduce(function(m,x){ return Math.max(m, x.id); }, 0)) + 1;
@@ -786,7 +813,7 @@ var L = (function(){
       txt = '뻑 수정: '+nm(rec.i)+' '+PPEOK_NAMES[rec.level]+(rec.r?' ('+rec.r+'판)':'')+' - '+nm(j)+' 죽음 → '+won(pay)+' 돌려줌 ('+nm(rec.i)+' -'+won(pay)+')';
     } else {
       if (!isDead) return {ok:false};
-      var pay2 = Math.min(rec.each, Math.max(0, g.players[j].bal));
+      var pay2 = capPay(rec.each, g.players[j].bal);
       g.players[j].bal -= pay2; g.players[rec.i].bal += pay2; rec.to.push({i:j, pay:pay2}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay2;
       rec.dead.splice(rec.dead.indexOf(j), 1);
       txt = '뻑 수정: '+nm(rec.i)+' '+PPEOK_NAMES[rec.level]+(rec.r?' ('+rec.r+'판)':'')+' - '+nm(j)+' 죽음 취소 → '+won(pay2)+' 다시 냄';
@@ -809,7 +836,7 @@ var L = (function(){
       txt = '뻑 재정산(낸 사람 수정): '+tag+' - '+nm(j)+' 빠짐 → '+won(pbk)+' 돌려줌'+(pbk<x.pay?' (관리자: 잔액 한도)':'');
     } else {
       if (x) return {ok:false, msg:nm(j)+' 님은 이미 낸 사람이에요'};
-      var pay = g.admin ? rec.each : Math.min(rec.each, Math.max(0, g.players[j].bal));
+      var pay = g.admin ? (unitAmt(rec.each)||floor500(rec.each)) : capPay(rec.each, g.players[j].bal);
       if (!pay) return {ok:false, msg: nm(j)+' 님은 잔액이 0원이라 낼 수 없어요'};
       g.players[j].bal -= pay; g.players[rec.i].bal += pay; rec.to.push({i:j, pay:pay}); rec.to.sort(function(a,b){ return a.i-b.i; }); rec.total += pay; if (g.admin) markNeg(g, [j]);
       var k = rec.dead.indexOf(j); if (k>=0) rec.dead.splice(k, 1);
@@ -874,6 +901,7 @@ var L = (function(){
     return best;
   }
   function gwApply(g, i, each, now){
+    each = unitAmt(each) || floor500(each);
     var p = g.players[i], to = gwPayers(g, i).map(function(j){ return {i:j, pay: each}; }); // 마이너스 진행: 모자라도 광값을 다 냄
     var over = []; to.forEach(function(x){ over = over.concat(overOf(x.i, g.players[x.i].bal, [{i:i, pay:x.pay}])); });
     to.forEach(function(x){ g.players[x.i].bal -= x.pay; p.bal += x.pay; }); markNeg(g, to.map(function(x){ return x.i; }));
@@ -1045,6 +1073,8 @@ var L = (function(){
   // 마이너스 잔액(JB): 최종 정산에서 잃은 돈은 충전금액(넣은 돈)까지만 냄. 못 낸 부족분은 받을 사람들이 받을 금액 비율대로 나눠서 덜 받음
   function settle(g){
     var rows = g.players.map(function(p,i){ return {i:i, name:p.name, invested:p.invested, bal:p.bal, net:p.bal-p.invested, rawNet:p.bal-p.invested, short:0, cut:0}; });
+    var ab = align500(rows.map(function(r){ return r.bal; })), ai = align500(rows.map(function(r){ return r.invested; }));
+    rows.forEach(function(r,i){ r.bal = ab[i]; r.invested = ai[i]; r.net = ab[i]-ai[i]; r.rawNet = r.net; });
     // JB 규칙: 마이너스로 끝난 사람은 충전금액(넣은 돈)까지만 냄. 못 낸 부족분(0원 아래 금액)은 다른 진 사람에게 넘기지 않고,
     // 그 사람이 0원 아래로 내려가며 낸 돈(벌금·멍청이·광값 한도 초과분, g.owe)을 받은 사람만 받은 비율대로 덜 받음.
     // (장부가 모자라면 남는 부족분만 받을 사람 전원이 받을 금액 비율대로 나눔 — 예전 버전 저장분 대비)
@@ -1178,7 +1208,7 @@ var L = (function(){
       throw new Error('잘못된 링크');
     }).then(function(b){ return cleanState(JSON.parse(new TextDecoder().decode(b))); });
   }
-  return {live:live,markNeg:markNeg,negFix:negFix,gwClear:gwClear,giveBack:giveBack,takeBack:takeBack,syncGwang:syncGwang,adminSet:adminSet,EVENTS:EVENTS,eventApply:eventApply,evsFix:evsFix,evRecPayer:evRecPayer,evCancel:evCancel,evTitle:evTitle,totalCounts:totalCounts,tiersOf:tiersOf,tierPpp:tierPpp,nextTier:nextTier,syncPpp:syncPpp,allIn:allIn,roundTouched:roundTouched,restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,gpDead:gpDead,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle,finishHand:finishHand,lastHandNets:lastHandNets};
+  return {unitAmt:unitAmt,floor500:floor500,live:live,markNeg:markNeg,negFix:negFix,gwClear:gwClear,giveBack:giveBack,takeBack:takeBack,syncGwang:syncGwang,adminSet:adminSet,EVENTS:EVENTS,eventApply:eventApply,evsFix:evsFix,evRecPayer:evRecPayer,evCancel:evCancel,evTitle:evTitle,totalCounts:totalCounts,tiersOf:tiersOf,tierPpp:tierPpp,nextTier:nextTier,syncPpp:syncPpp,allIn:allIn,roundTouched:roundTouched,restFull:restFull,encodeState:encodeState,decodeState:decodeState,packState:packState,won:won,roundPlayers:roundPlayers,autoSeat:autoSeat,seatOrder:seatOrder,simpleSeat:simpleSeat,gwangCalc:gwangCalc,gwangFormula:gwangFormula,gwangPriceOf:gwangPriceOf,gwangPayerText:gwangPayerText,gwangMode:gwangMode,giveupInfo:giveupInfo,ppeokScoreOf:ppeokScoreOf,ppeokMultOf:ppeokMultOf,ppeokPoints:ppeokPoints,ppeokCalc:ppeokCalc,ppeokNote:ppeokNote,ppeokPayerMode:ppeokPayerMode,ppeokPayerText:ppeokPayerText,PPEOK_NAMES:PPEOK_NAMES,ppeokNPts:ppeokNPts,ppeokChainPts:ppeokChainPts,ppeokName:ppeokName,pkChains:pkChains,pkChainText:pkChainText,roundNote:roundNote,CHARGE_AMTS:CHARGE_AMTS,newGame:newGame,active:active,goScore:goScore,calcRound:calcRound,applyRound:applyRound,voidRound:voidRound,charge:charge,canUndoCharge:canUndoCharge,undoCharge:undoCharge,lastCharge:lastCharge,gwStep:gwStep,gpDead:gpDead,foolStep:foolStep,foolText:foolText,foolCount:foolCount,foolAmtOf:foolAmtOf,pkRecPayer:pkRecPayer,pkTextItems:pkTextItems,pkImportText:pkImportText,pksFix:pksFix,curSeon:curSeon,pkMark:pkMark,pkRecDead:pkRecDead,lastWinner:lastWinner,setDead:setDead,resync:resync,syncDead:syncDead,deadOk:deadOk,resettle:resettle,gwText:gwText,gwCount:gwCount,gwCurRecs:gwCurRecs,gwPayers:gwPayers,pkStep:pkStep,pkText:pkText,pkPayers:pkPayers,pkFind:pkFind,pkCanUndo:pkCanUndo,FINE_KINDS:FINE_KINDS,fineAmtOf:fineAmtOf,finePreview:finePreview,fineText:fineText,fine:fine,canUndoFine:canUndoFine,undoFine:undoFine,lastFine:lastFine,lastFineOf:lastFineOf,fineIsCur:fineIsCur,fineRoundsFix:fineRoundsFix,roundTag:roundTag,fineKind:fineKind,fineCounts:fineCounts,chargeSummary:chargeSummary,pool:pool,settle:settle,finishHand:finishHand,lastHandNets:lastHandNets};
 })();
 if (typeof module!=='undefined') module.exports = L;
 </script>
@@ -1268,7 +1298,7 @@ function pppAskHtml(){ if(!PA||!g) return '';
    '<div style="font-size:15px;color:#666;margin-top:10px">광값도 점당과 같이 바뀌어요</div></div></div>'; }
 function pppInc(d){ if(!PA) return; PA.inc=Math.max(500,PA.inc+d); render(); }
 function pppAskDo(yes){ if(!PA) return; var min=PA.min, inc=PA.inc; PA=null; g.pppAsk=g.pppAsk||{};
-  if(yes){ snap(); var old=g.ppp; g.ppp=old+inc; L.syncGwang(g); g.log.unshift({t:'점당', r:g.round, txt:'점당 금액 변경: '+W(old)+' → '+W(g.ppp)+' (첫 충전 후 '+minTxt(min)+' 경과 알림)'}); }
+  if(yes){ snap(); var old=g.ppp; g.ppp=L.unitAmt(old+inc)||old; L.syncGwang(g); g.log.unshift({t:'점당', r:g.round, txt:'점당 금액 변경: '+W(old)+' → '+W(g.ppp)+' (첫 충전 후 '+minTxt(min)+' 경과 알림)'}); }
   g.pppAsk[min]=true; save(); render(); }
 function elHms(ms,short){ var t=Math.max(0,Math.floor(ms/1000)), h=Math.floor(t/3600), m=Math.floor(t/60)%60, s=t%60, z=function(x){ return ('0'+x).slice(-2); };
   return short ? h+':'+z(m)+':'+z(s) : h+'시간 '+z(m)+'분 '+z(s)+'초'; }
@@ -1941,7 +1971,7 @@ function renderSet(){
    '<button class="b3" onclick="view=\'main\';render()">돌아가기</button></div>';
   app.innerHTML=h;
 }
-function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value, pn2=+$('spn2').value, pn3=+$('spn3').value; if($('spn2').value===''||$('spn3').value==='') return alert('따로 한 2번째·3번째 뻑 점수를 넣어 주세요 (0점도 돼요)'); if(!(pks>0)||!(pkm>0)||!(pn2>=0)||!(pn3>=0)) return alert('뻑 점수·배수를 확인해 주세요 (첫뻑 점수·배수는 1 이상, 2번째·3번째 뻑은 0 이상)'); var fa=+$('sfa').value; if(!(fa>0)) return alert('벌금 금액을 확인해 주세요'); var fo=+$('sfo').value; if(!(fo>0)) return alert('멍청이 금액을 확인해 주세요'); var t1=+$('st1').value,t2=+$('st2').value,t3=+$('st3').value,m1=+$('stm1').value,m2=+$('stm2').value; if(!(t1>0&&t2>0&&t3>0&&m1>0&&m2>m1)) return alert('시간대 금액과 분(2단계 분이 1단계보다 커야 해요)을 확인해 주세요'); var oldP=g.ppp; snap(); g.tierOn=$('stier').checked; g.tiers=[{min:m1,ppp:t1},{min:m2,ppp:t2},{min:null,ppp:t3}]; g.fineAmt=fa; g.foolAmt=fo; g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokN2=pn2; g.ppeokN3=pn3; g.ppp=p; g.gwangPrice=(p!==oldP)?p:gp; if(g.tierOn&&L.syncPpp(g,Date.now())){} L.syncGwang(g); g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
+function saveSet(){ var p=+$('sp').value, c=+$('sct').value; if(!(p>0)) return alert('금액을 확인해 주세요'); if(!(c>0)) return alert('총통 점수를 확인해 주세요'); var gp=+$('sgp').value; if(!(gp>0)) return alert('광값 금액을 확인해 주세요'); var pks=+$('spk').value, pkm=+$('spm').value, pn2=+$('spn2').value, pn3=+$('spn3').value; if($('spn2').value===''||$('spn3').value==='') return alert('따로 한 2번째·3번째 뻑 점수를 넣어 주세요 (0점도 돼요)'); if(!(pks>0)||!(pkm>0)||!(pn2>=0)||!(pn3>=0)) return alert('뻑 점수·배수를 확인해 주세요 (첫뻑 점수·배수는 1 이상, 2번째·3번째 뻑은 0 이상)'); var fa=+$('sfa').value; if(!(fa>0)) return alert('벌금 금액을 확인해 주세요'); var fo=+$('sfo').value; if(!(fo>0)) return alert('멍청이 금액을 확인해 주세요'); var t1=+$('st1').value,t2=+$('st2').value,t3=+$('st3').value,m1=+$('stm1').value,m2=+$('stm2').value; if(!(t1>0&&t2>0&&t3>0&&m1>0&&m2>m1)) return alert('시간대 금액과 분(2단계 분이 1단계보다 커야 해요)을 확인해 주세요'); var oldP=g.ppp; snap(); g.tierOn=$('stier').checked; g.tiers=[{min:m1,ppp:L.unitAmt(t1)},{min:m2,ppp:L.unitAmt(t2)},{min:null,ppp:L.unitAmt(t3)}]; g.fineAmt=L.unitAmt(fa); g.foolAmt=L.unitAmt(fo); g.ppeokScore=pks; g.ppeokMult=pkm; g.ppeokN2=pn2; g.ppeokN3=pn3; g.ppp=L.unitAmt(p); g.gwangPrice=(p!==oldP)?L.unitAmt(p):L.unitAmt(gp); if(g.tierOn&&L.syncPpp(g,Date.now())){} L.syncGwang(g); g.ctScore=c; g.giveupMult=+$('sgu').value===4?4:2; g.gwangpal=$('sg').checked; view='main'; render(); }
 function resetAll(){ if(!confirm('모든 기록을 지우고 새로 시작할까요? (정산 기록은 "지난 정산 기록"에 자동 저장돼요)')) return; if(!confirm('정말 지울까요?')) return; histSave(); g=null; prev=null; PA=null; UH=[]; RH=[]; LASTJ=null; HSKIP=false; localStorage.removeItem(KEY); try{ localStorage.removeItem(UKEY); }catch(e){} view='main'; render(); }
 
 function capNote(r){ return r.short ? '<br><span class="capnote" style="font-size:16px;color:#b35c00">실제 손익 '+W(r.rawNet)+' → 충전금액 '+W(r.invested)+'까지만 냄 (부족분 '+W(r.short)+' 안 냄'+((r.cutTo||[]).length?': '+r.cutTo.map(function(c){ return esc(g.players[c.i].name)+' '+W(c.amt); }).join(', ')+' 덜 받음':'')+')</span>' : (r.cut ? '<br><span class="capnote" style="font-size:16px;color:#b35c00">실제 손익 '+(r.rawNet>0?'+':'')+W(r.rawNet)+' → 마이너스로 받은 돈 중 못 받는 '+W(r.cut)+' 빼고</span>' : ''); }
