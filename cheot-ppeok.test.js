@@ -13,32 +13,25 @@ function fresh(){
 
 var g = fresh();
 var s1 = L.pkMark(g, 0, 1);
-assert(names(s1.chains)==='1뻑:3점/단계1', '1뻑 '+names(s1.chains));
+assert(names(s1.chains)==='첫뻑:3점/단계1' && g.players.map(function(p){ return p.bal; }).join()==='212000,194000,194000', names(s1.chains));
 var s2 = L.pkMark(g, 0, 1);
-assert(s2.chains.every(function(c){ return c.level===1; }) && names(s2.chains)==='1뻑:3점/단계1 + 2뻑:0점/단계1', '2뻑 '+names(s2.chains));
-assert(!(g.pkYeon||{})[0], '2뻑에서 연뻑 꺼짐');
+assert(s2.chains.length===1 && s2.chains[0].name==='2연뻑' && s2.chains[0].level===2 && s2.chains[0].pts===6, names(s2.chains));
+assert(g.players.map(function(p){ return p.bal; }).join()==='224000,188000,188000', '2연뻑 돈');
 var s3 = L.pkMark(g, 0, 1);
-assert(s3.chains.length===1 && s3.chains[0].final && s3.chains[0].name==='최종3뻑' && s3.chains[0].pts===5 && s3.chains[0].level===1, '3번째 '+names(s3.chains));
-assert(!(g.pkYeon||{})[0], '최종3뻑은 연뻑 아님');
-var blocked = L.pkYeon(g, 0, 1);
-assert(!blocked.ok, '최종3뻑에서 연뻑 버튼 거절');
-
-var win = L.calcRound(g, 0, {chongtong:true, ppeokNWin:true, losers:[{idx:1},{idx:2}]});
-assert(win.ppeokNWin && (!win.ppeok || !win.ppeok.length), '최종3뻑은 곁가지 뻑 없음');
-assert(win.lines.length===2 && win.lines.every(function(x){ return x.score===5 && x.pay===10000 && x.level!==2; }), '각 10000 '+win.lines.map(function(x){ return x.pay; }).join());
-assert(win.total===20000, '승자 '+win.total);
+assert(s3.chains.length===1 && s3.chains[0].name==='3연뻑' && s3.chains[0].level===3 && s3.chains[0].pts===12, names(s3.chains));
+assert(g.players.map(function(p){ return p.bal; }).join()==='248000,176000,176000', '3연뻑 돈');
+var blocked = L.pkMark(g, 0, 1);
+assert(!blocked.ok, '3연뻑 다음 + 거절');
+var win = L.calcRound(g, 0, {chongtong:true, ppeokWin:true, losers:[{idx:1},{idx:2}]});
 var sum0 = g.players.reduce(function(s,p){ return s+p.bal; }, 0);
 var copy = JSON.parse(JSON.stringify(g));
 L.applyRound(copy, win);
-assert(copy.players.map(function(p){ return p.bal; }).join()==='220000,190000,190000', '반영 '+copy.players.map(function(p){ return p.bal; }).join());
+assert(copy.players.map(function(p){ return p.bal; }).join()==='248000,176000,176000', '3연뻑 승 또 안 뺌');
 assert(copy.players.reduce(function(s,p){ return s+p.bal; }, 0)===sum0, '합계');
-
-var gy = fresh();
-L.pkMark(gy, 0, 1);
-var y = L.pkYeon(gy, 0, 1);
-assert(y.chains.length===1 && y.chains[0].name==='2연뻑' && y.chains[0].level===2 && y.chains[0].pts===6, '연뻑 '+names(y.chains));
-var resY = L.calcRound(gy, 1, {score:3, go:0, losers:[{idx:0},{idx:2}], ppeoks:y.chains.map(function(c){ return {idx:0, level:c.level, n:c.n, pts:c.pts}; }), seated:[0,1,2]});
-assert(resY.ppeok.length===2 && resY.ppeok.every(function(x){ return x.pay===12000 && x.level===2; }), '2연뻑 12000');
+L.pkMark(g, 0, -1);
+assert((g.pkPick||{})[0]===2 && g.players[0].bal===224000, '− 는 2연뻑');
+L.pkMark(g, 0, -1);
+assert((g.pkPick||{})[0]===1 && g.players[0].bal===212000, '− 는 첫뻑');
 
 // 4명이고 죽음이 없으면 뻑은 안 되고 돈도 안 움직임
 var g4 = L.newGame(['준석','수현','세훈','미경'], 100000, 2000);
@@ -48,7 +41,7 @@ assert(!blocked4.ok && blocked4.msg==='죽음을 선택 후 체크해주세요',
 assert(g4.players.every(function(p){ return p.bal===100000; }), '돈 그대로');
 g4.deadPick = {3:true};
 var live1 = L.pkMark(g4, 0, 1);
-assert(live1.ok && names(live1.chains)==='1뻑:3점/단계1', names(live1.chains));
+assert(live1.ok && names(live1.chains)==='첫뻑:3점/단계1', names(live1.chains));
 assert(g4.players.map(function(p){ return p.bal; }).join()==='112000,94000,94000,100000', '실시간 '+g4.players.map(function(p){ return p.bal; }).join());
 assert(g4.pkRec && g4.pkRec[0], '이미 정산 표시');
 assert(L.totalCounts(g4, 0).pk===1, '카드 뻑 횟수 '+L.totalCounts(g4, 0).pk);
@@ -130,7 +123,7 @@ assert(bals(restored)==='100000,100000,100000,100000' && !(restored.pks||[]).len
 L.pkMark(back, 0, -1);
 assert(bals(back)==='100000,100000,100000,100000' && !(back.pks||[]).some(function(r){ return r.src==='live'; }), '− 되돌리기');
 L.pkMark(back, 0, 1);
-L.pkYeon(back, 0, 1);
+L.pkMark(back, 0, 1);
 assert(bals(back)==='124000,88000,88000,100000', '2연뻑 '+bals(back));
 L.voidRound(back, false);
 assert(bals(back)==='100000,100000,100000,100000' && !(back.pks||[]).length, '무효 '+bals(back));
@@ -158,8 +151,7 @@ assert(whole.players.every(function(p){ return p.bal>=0; }), '환불 후 마이�
 var ui = html.split('function pkMarkUI')[1].split('function ppeokBox')[0];
 assert(ui.indexOf('snap()')>=0 && ui.indexOf('snap()')<ui.indexOf('L.pkMark'), '뻑 체크 전에 스냅샷');
 assert(ui.indexOf('prev=oldPrev')>=0, '실패한 체크는 되돌리기 대상을 안 바꿈');
-var yeonUi = html.split('function pkYeonUI')[1].split('function renderChg')[0];
-assert(yeonUi.indexOf('snap()')>=0 && yeonUi.indexOf('snap()')<yeonUi.indexOf('L.pkYeon'), '연뻑도 스냅샷');
+assert(html.indexOf('class="finerow pkyeon"')<0 && html.indexOf('id="pkask"')<0 && html.indexOf('pkYeonRow')<0, '연뻑 줄·팝업 없음');
 var voidUi = html.split('function renderVoid')[1].split('function voidGo')[0];
 assert(voidUi.indexOf('이미 보유머니에서 빠진 뻑 돈은 무효하면 돌려줘요')>=0, '무효 문구');
 assert(voidUi.indexOf('id="voidppeok"')>=0, '무효 문구 위치');
@@ -203,20 +195,21 @@ L.applyRound(cap2, big);
 assert(bals(cap2)==='22000,154000,4000,60000', '한도 반영 '+bals(cap2));
 assert(chipSum(cap2)===chipSum(capg), '한도 합계');
 
-// 5) 최종3뻑 5점: 체크 때 각 10,000. 판 반영은 그 돈을 다시 안 움직임
+// 5) 같은 +로 2연뻑·3연뻑. 판 반영은 그 돈을 다시 안 움직임
 var fin = table();
-L.pkMark(fin, 0, 1); L.pkMark(fin, 0, 1);
-assert(bals(fin)==='112000,94000,94000,100000', '2뻑은 돈 그대로');
 L.pkMark(fin, 0, 1);
-assert(bals(fin)==='120000,90000,90000,100000', '최종3 '+bals(fin));
-var finRes = L.calcRound(fin, 0, {chongtong:true, ppeokNWin:true, losers:[{idx:1},{idx:2}]});
-assert(finRes.total===20000 && finRes.lines.every(function(x){ return x.pay===10000 && x.score===5; }), '화면 숫자 20000');
+assert(bals(fin)==='112000,94000,94000,100000', '첫뻑');
+L.pkMark(fin, 0, 1);
+assert(bals(fin)==='124000,88000,88000,100000', '2연뻑 '+bals(fin));
+L.pkMark(fin, 0, 1);
+assert(bals(fin)==='148000,76000,76000,100000', '3연뻑 '+bals(fin));
+var finRes = L.calcRound(fin, 0, {chongtong:true, ppeokWin:true, losers:[{idx:1},{idx:2}]});
 var finBal = bals(fin);
 var finCopy = JSON.parse(JSON.stringify(fin));
 L.applyRound(finCopy, finRes);
 assert(bals(finCopy)===finBal, '반영 이동 0');
 var finHand = L.finishHand(finCopy, {before:fin.players.map(function(p){ return p.bal; })});
-assert(finHand.nets.map(function(x){ return x.amt; }).join()==='20000,-10000,-10000,0', '전판 최종3 '+finHand.nets.map(function(x){ return x.amt; }).join());
+assert(finHand.nets.map(function(x){ return x.amt; }).join()==='48000,-24000,-24000,0', '전판 3연뻑 '+finHand.nets.map(function(x){ return x.amt; }).join());
 
 // 6) 전판: 손 시작 스냅샷이 있으면 뻑+점수가 한 번씩. 무효면 뻑은 0
 var hand = table();
@@ -234,38 +227,14 @@ L.voidRound(mid, false);
 var voidHand = L.finishHand(mid, {});
 assert(voidHand.nets.every(function(x){ return x.amt===0; }), '무효 전판 0 '+voidHand.nets.map(function(x){ return x.amt; }).join());
 
-// 7) 첫뻑·2연뻑·3연뻑은 체크하는 순간 보유머니. 연뻑 버튼은 그대로. 3연뻑 승은 또 안 뺌
-assert(html.indexOf('class="finerow pkyeon"')>=0 && html.indexOf('id="pkask"')<0, '연뻑 버튼 유지, 팝업 없음');
-var ye = table();
-delete ye.deadPick;
-ye.pkPlainN = {0:1};
-var noSeat = L.pkYeon(ye, 0, 1);
-assert(!noSeat.ok && noSeat.msg==='죽음을 선택 후 체크해주세요', noSeat.msg);
-ye = table();
-L.pkMark(ye, 0, 1);
-assert(bals(ye)==='112000,94000,94000,100000', '첫뻑 즉시');
-L.pkYeon(ye, 0, 1);
-assert(bals(ye)==='124000,88000,88000,100000' && chipSum(ye)===400000, '2연뻑 즉시 '+bals(ye));
-var yeScore = L.calcRound(ye, 1, {score:3, go:0, losers:[{idx:0},{idx:2}], ppeoks:[], seated:[0,1,2]});
-var yeCopy = JSON.parse(JSON.stringify(ye));
-L.applyRound(yeCopy, yeScore);
-assert(bals(yeCopy)==='118000,100000,82000,100000', '2연뻑 또 안 뺌 '+bals(yeCopy));
-L.pkYeon(ye, 0, 1);
-assert(bals(ye)==='148000,76000,76000,100000' && chipSum(ye)===400000, '3연뻑 즉시 '+bals(ye));
-var yeWin = L.calcRound(ye, 0, {chongtong:true, ppeokWin:true, losers:[{idx:1},{idx:2}]});
-var yeWinCopy = JSON.parse(JSON.stringify(ye));
-L.applyRound(yeWinCopy, yeWin);
-assert(bals(yeWinCopy)==='148000,76000,76000,100000', '3연뻑 승 이동 0');
-L.pkYeon(ye, 0, -1);
-assert(bals(ye)==='124000,88000,88000,100000' && (ye.pkYeon||{})[0]===2, '3연뻑 -는 2연뻑');
-L.pkYeon(ye, 0, -1);
-assert(!(ye.pkYeon||{})[0] && (ye.pkPlainN||{})[0]===1 && bals(ye)==='112000,94000,94000,100000', '2연뻑 -는 1뻑 '+bals(ye));
+// 7) 버튼은 하나. 첫뻑 돈을 이미 써도 2연뻑 차액은 바로 빠짐
+assert(html.indexOf('class="finerow pkyeon"')<0 && html.indexOf('pkYeonRow')<0 && html.indexOf('id="pkask"')<0, '연뻑 줄·팝업 없음');
 var spentUp = table();
 L.pkMark(spentUp, 0, 1);
 spentUp.players[0].bal = 1000;
 var sumBefore = chipSum(spentUp);
-var up = L.pkYeon(spentUp, 0, 1);
-assert(up.ok && bals(spentUp)==='13000,88000,88000,100000' && chipSum(spentUp)===sumBefore, '쓴 뒤에도 2연뻑 '+bals(spentUp));
+var up = L.pkMark(spentUp, 0, 1);
+assert(up.ok && up.chains[0].name==='2연뻑' && bals(spentUp)==='13000,88000,88000,100000' && chipSum(spentUp)===sumBefore, '쓴 뒤에도 2연뻑 '+bals(spentUp));
 assert(spentUp.players.every(function(p){ return p.bal>=0; }), '올린 뒤 마이너스 없음');
 
 console.log('ok', names(s1.chains), '→', names(s2.chains), '→', names(s3.chains), 'win', win.total, 'live', live1.rec && live1.rec.total);
