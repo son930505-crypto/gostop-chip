@@ -416,7 +416,8 @@ var L = (function(){
   function pkLiveFinal(g, i){ var rec = pkFind(g, (g.pkRec||{})[i]); return !!(rec && rec.src==='live' && rec.finalLive); }
   function applyRound(g, res, note){
     (res.ppeok||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
-    var skipScore = !!(res.ppeokNWin && pkLiveFinal(g, res.winner));
+    var recW = pkFind(g, (g.pkRec||{})[res.winner]);
+    var skipScore = !!(recW && recW.src==='live' && ((res.ppeokNWin && recW.finalLive) || (res.ppeokWin && !res.ppeokNWin && recW.yeonLive && recW.level>=3)));
     if (!skipScore){ res.lines.forEach(function(x){ g.players[x.idx].bal -= x.pay; }); g.players[res.winner].bal += res.total; }
     (res.gwang||[]).forEach(function(x){ g.players[x.from].bal -= x.pay; g.players[x.to].bal += x.pay; });
     // 판 반영 때 정산된 뻑도 뻑 기록(g.pks)에 남김 → 뻑 내역에서 죽은 사람 수정 가능
@@ -1991,9 +1992,9 @@ function curRes(){
 }
 function renderS3(){
   var r=curRes(), h='<div class="box"><h2>'+(r.ppeokNWin?'최종3뻑 승: 결과 확인':r.ppeokWin?'3연뻑 승: 결과 확인':r.chongtong?'총통 승: 결과 확인':'3단계: 결과 확인')+'</h2>';
-  var liveFinal=(g.pks||[]).filter(function(x){ return x.src==='live' && x.finalLive && x.i===st.w; })[0];
-  if (r.ppeokNWin && liveFinal){
-    h+='<p class="note" id="finalpaid">이 5점은 뻑을 체크할 때 이미 보유머니에서 빠졌어요.</p>';
+  var liveFinal=(g.pks||[]).filter(function(x){ return x.src==='live' && x.i===st.w && ((r.ppeokNWin && x.finalLive) || (r.ppeokWin && !r.ppeokNWin && x.yeonLive && x.level>=3)); })[0];
+  if ((r.ppeokNWin || (r.ppeokWin && !r.ppeokNWin)) && liveFinal){
+    h+='<p class="note" id="finalpaid">'+(r.ppeokNWin?'이 5점':'이 '+liveFinal.points+'점')+'은 뻑을 체크할 때 이미 보유머니에서 빠졌어요.</p>';
     (liveFinal.to||[]).forEach(function(x){ h+='<div class="calc pkdone">'+esc(g.players[x.i].name)+' 이미 냄 '+W(x.pay)+'</div>'; });
     h+='<p class="big" id="finalrecv">'+esc(g.players[r.winner].name)+' 이미 받은 돈: '+W(liveFinal.total)+'</p>';
     h+='<p class="big" id="finaldue">이번에 더 받는 돈: <b>0원</b></p>';
