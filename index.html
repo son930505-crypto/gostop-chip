@@ -439,10 +439,12 @@ var L = (function(){
     g.log.unshift({t:'판', r:g.round, txt: note || (g.players[res.winner].name+' 승, '+won(res.total)+' 받음')});
   }
   function voidRound(g, doubleNext){
-    pkUndoRound(g);
+    var undone = pkUndoRound(g);
+    if (undone && undone.ok===false) return undone;
     delete g.gpPick; delete g.pkPick; delete g.pkDone; delete g.pkPlain; delete g.pkPlainN; delete g.pkCheot; delete g.pkYeon; delete g.pkRec; delete g.gwCur; delete g.deadPick; delete g.seonPick; delete g.gpAutoDead; g.round++;
     if (doubleNext) g.nextMult = Math.min(8, (g.nextMult||1)*2); // 모바일 룰: 나가리 누적 최대 8배
     g.log.unshift({t:'무효', r:g.round, txt:'무효(나가리·쇼당)'+(doubleNext?', 다음 판 x'+g.nextMult:'')});
+    return {ok:true};
   }
   // 충전: 충전 내역(chg)에 시각·사람·금액·충전 후 잔액을 남긴다
   // amt 생략 시 g.limit (예전 방식 호환). 화면에서는 버튼 금액(1만·5만·10만)을 넘긴다
@@ -556,7 +558,9 @@ var L = (function(){
   }
   function totalCounts(g, i){
     var n = function(a){ return (a||[]).filter(function(x){ return x.i===i; }).length; };
-    return {fine:n(g.fines), fool:n(g.fools), gw:n(g.gws), pk:n(g.pks)+pkChains(g,i).length, win:(g.players[i]&&g.players[i].wins)||0};
+    var cur = (g.pkRec||{})[i];
+    var past = (g.pks||[]).filter(function(x){ return x && x.i===i && !(cur && (x.id===cur || +x.id===+cur)); }).length;
+    return {fine:n(g.fines), fool:n(g.fools), gw:n(g.gws), pk:past+pkChains(g,i).length, win:(g.players[i]&&g.players[i].wins)||0};
   }
   function allIn(g){ var ng = g.neg||{}; return g.players.filter(function(p,i){ return p.invested>0 && p.bal<=0 && !ng[i]; }).map(function(p){ return p.name; }); }
   function undoCharge(g, id){
@@ -744,8 +748,11 @@ var L = (function(){
   }
   function pkUndoRound(g){
     var r = (g.round||0)+1, recs = (g.pks||[]).filter(function(x){ return x && x.src==='live' && x.r===r; });
+    var stuck = !g.admin && recs.filter(function(rec){ return !pkCanUndo(g, rec); });
+    if (stuck && stuck.length) return {ok:false, msg: stuck.map(function(rec){ return (g.players[rec.i]?g.players[rec.i].name:'')+' 님'; }).join(', ')+'이 뻑으로 받은 돈을 이미 써서 무효할 수 없어요. 그 돈이 잔액에 있을 때만 무효할 수 있어요'};
     recs.forEach(function(rec){ if (rec.over) oweRec(g, rec, -1); pkReverse(g, rec); });
     delete g.pkRec;
+    return {ok:true};
   }
   function pkFind(g, id){ if (id===undefined || id===null || id==='') return null; return (g.pks||[]).filter(function(x){ return x.id===id || +x.id===+id; })[0] || null; }
   function pkApplyNew(g, i, level, now, ppp, exactTo){
@@ -1659,7 +1666,7 @@ function toggleGpCard(i){
 // 카드의 뻑: + 로 없음→첫뻑→2연뻑→3연뻑, - 로 한 단계 내림. 누르는 즉시 그 시점 점당 금액으로 정산(이전 단계 정산은 정확히 되돌리고 새 단계로 바꿈)
 function pkLabel(i){ var n=(g.pkPlainN||{})[i]||0, y=(g.pkYeon||{})[i]||0; if (y>=2) return L.PPEOK_NAMES[y]; if (n>=3) return '최종3뻑'; if (!n) return '없음'; return n+'뻑'; }
 function pkYeonLabel(i){ var y=(g.pkYeon||{})[i]||0; return y>=2 ? L.PPEOK_NAMES[y] : '없음'; }
-function pkYeonUI(i,d){ var keep=st, r=L.pkYeon(g,i,d); if (!r.ok){ if (view==='main') st={pkMsg:r.msg}; else st.pkMsg=r.msg; render(); alert(r.msg); return; } var last=r.chains[r.chains.length-1]; var msg=g.players[i].name+' 연뻑: '+(last?L.pkChainText(last):'없음')+' (보유머니에 바로 반영)'; if (view==='main') st={pkMsg:msg}; else { st=keep; st.pkMsg=msg; } render(); }
+function pkYeonUI(i,d){ var keep=st, oldPrev=prev; snap(); var r=L.pkYeon(g,i,d); if (!r.ok){ prev=oldPrev; if (view==='main') st={pkMsg:r.msg}; else st.pkMsg=r.msg; render(); alert(r.msg); return; } var last=r.chains[r.chains.length-1]; var msg=g.players[i].name+' 연뻑: '+(last?L.pkChainText(last):'없음')+' (보유머니에 바로 반영)'; if (view==='main') st={pkMsg:msg}; else { st=keep; st.pkMsg=msg; } render(); }
 function pkYeonRow(i){ var n=(g.pkPlainN||{})[i]||0, y=(g.pkYeon||{})[i]||0, dis=!n || (n>=3 && !y); return '<div class="finerow pkyeon"><span class="flab" style="color:#6a3a00">연뻑</span><button class="pkb pkminus" '+(dis?'disabled':'')+' onclick="pkYeonUI('+i+',-1)">-</button><span class="pkl">'+pkYeonLabel(i)+'</span><button class="pkb pkplus" '+(dis?'disabled':'')+' onclick="pkYeonUI('+i+',1)">+</button></div>'; }
 function pkDetail(i, cls){ var ch=L.pkChains(g,i); if (!ch.length) return '<div class="pkdet">뻑 +는 횟수만 (연뻑 아님). 연뻑은 아래 연뻑 버튼</div>';
   return '<div class="pkdet">'+ch.map(L.pkChainText).join(' · ')+(ch.length>1?' = 합 '+ch.reduce(function(a,c){ return a+c.pts; },0)+'점'+(ch.some(function(c){ return c.inFinal; })?' (최종3뻑: 마지막 뻑 점수만)':''):'')+'</div>'; }
@@ -1797,12 +1804,16 @@ function chgHtml(ro){
 function renderChg(){ app.innerHTML=chgHtml(false)+'<button class="b3" onclick="view=\'main\';render()">돌아가기</button>'; }
 function doVoid(){ view='void'; render(); }
 function renderVoid(){
-  app.innerHTML='<div class="box"><h2>이번 판 무효 (나가리·쇼당)</h2><p>돈은 오가지 않아요.</p>'+
+  var rr=(g.round||0)+1, recs=(g.pks||[]).filter(function(x){ return x && x.src==='live' && x.r===rr; });
+  var note=recs.length
+    ? '<p id="voidppeok">이미 보유머니에서 빠진 뻑 돈은 무효하면 돌려줘요. '+recs.map(function(r){ return esc(g.players[r.i].name)+' '+W(r.total); }).join(', ')+'. 받은 사람이 그 돈을 이미 썼으면 무효는 되지 않고 돈도 움직이지 않아요.</p>'
+    : '<p>돈은 오가지 않아요.</p>';
+  app.innerHTML='<div class="box"><h2>이번 판 무효 (나가리·쇼당)</h2>'+note+
    '<button class="b1" onclick="voidGo(true)">무효, 다음 판 2배</button>'+
    '<button class="b2" onclick="voidGo(false)">무효, 배수 없이</button>'+
    '<button class="b3" onclick="view=\'main\';render()">취소</button></div>';
 }
-function voidGo(d){ snap(); L.voidRound(g,d); L.finishHand(g,{}); view='main'; render(); }
+function voidGo(d){ var oldPrev=prev; snap(); var r=L.voidRound(g,d); if (r && r.ok===false){ prev=oldPrev; alert(r.msg); return; } L.finishHand(g,{}); view='main'; render(); }
 function undo(){
   if(!prev) return alert('되돌릴 것이 없어요');
   if(!confirm('방금 한 것을 되돌릴까요?')) return;
@@ -1927,8 +1938,9 @@ function legacyPk(){ var pk=g.pkPick||{}, rc=g.pkRec||{}; return pkWho().filter(
 // 뻑 +/- : 카드와 판 끝 점수 화면이 같은 횟수를 씀. 체크하는 순간 보유머니에서 바로 정산
 // 낼 사람은 판 끝 확정값 기준(죽은 사람 제외, 광팔이는 설정 따름). 예전 방식으로 이미 정산된 뻑(g.pkRec)은 다시 계산 안 함
 function pkMarkUI(i,d,sep){
-  var keep=st, r=L.pkMark(g,i,d,!!sep);
-  if (!r.ok){ if (view==='main') st={pkMsg:r.msg}; else st.pkMsg=r.msg; render(); alert(r.msg); return; }
+  var keep=st, oldPrev=prev; snap();
+  var r=L.pkMark(g,i,d,!!sep);
+  if (!r.ok){ prev=oldPrev; if (view==='main') st={pkMsg:r.msg}; else st.pkMsg=r.msg; render(); alert(r.msg); return; }
   var last=r.chains[r.chains.length-1];
   var msg=g.players[i].name+' 뻑: '+(last?L.pkChainText(last):'없음')+' (보유머니에 바로 반영)';
   if (view==='main') st={pkMsg:msg}; else { st=keep; st.pkMsg=msg; }
@@ -1979,7 +1991,14 @@ function curRes(){
 }
 function renderS3(){
   var r=curRes(), h='<div class="box"><h2>'+(r.ppeokNWin?'최종3뻑 승: 결과 확인':r.ppeokWin?'3연뻑 승: 결과 확인':r.chongtong?'총통 승: 결과 확인':'3단계: 결과 확인')+'</h2>';
-  if (r.ppeokNWin && (g.pks||[]).some(function(x){ return x.src==='live' && x.finalLive && x.i===st.w; })) h+='<p class="note">이 5점은 뻑을 체크할 때 보유머니에서 이미 빠졌어요. 같은 돈은 또 안 빠져요.</p>';
+  var liveFinal=(g.pks||[]).filter(function(x){ return x.src==='live' && x.finalLive && x.i===st.w; })[0];
+  if (r.ppeokNWin && liveFinal){
+    h+='<p class="note" id="finalpaid">이 5점은 뻑을 체크할 때 이미 보유머니에서 빠졌어요.</p>';
+    (liveFinal.to||[]).forEach(function(x){ h+='<div class="calc pkdone">'+esc(g.players[x.i].name)+' 이미 냄 '+W(x.pay)+'</div>'; });
+    h+='<p class="big" id="finalrecv">'+esc(g.players[r.winner].name)+' 이미 받은 돈: '+W(liveFinal.total)+'</p>';
+    h+='<p class="big" id="finaldue">이번에 더 받는 돈: <b>0원</b></p>';
+    h+='<p style="font-size:16px;color:#2a9d8f">합계 확인: 이번에 더 내는 돈 0원 = 더 받는 돈 0원 (일치)</p>';
+  } else {
   if ((r.ppeok||[]).length){
     h+='<h2 style="margin-top:8px">1. 뻑 (먼저 정산)</h2><p style="font-size:16px;color:#555">낼 사람: '+esc(L.ppeokPayerText(g))+'</p>';
     r.ppeok.forEach(function(x){ var pkNm=x.final?'최종3뻑':(x.level>1?L.PPEOK_NAMES[x.level]:(x.n||1)+'뻑'); h+='<div class="calc pkcalc">'+esc(g.players[x.from].name)+' → '+esc(g.players[x.to].name)+': '+pkNm+' '+x.points+'점 x '+W(g.ppp)+' = <b>'+W(x.pay)+'</b>'+(x.capped?'<br><span class="warn">잔액이 부족해서 '+W(x.pay)+'만 내요</span>':'')+'</div>'; });
@@ -1997,6 +2016,7 @@ function renderS3(){
   h+='<p class="big">'+esc(g.players[r.winner].name)+' 받는 돈: '+W(r.total)+'</p>';
   var chk=r.lines.reduce(function(s,x){return s+x.pay;},0);
   h+='<p style="font-size:16px;color:#2a9d8f">합계 확인: 진 사람 낸 돈 '+W(chk)+' = 이긴 사람 받는 돈 '+W(r.total)+(chk===r.total?' (일치)':' (불일치)')+'</p>';
+  }
   var dn=Object.keys(st.dead||{}).map(function(i){return g.players[i].name;});
   if (dn.length) h+='<p class="calc">죽음 (정산·광값 제외): '+esc(dn.join(', '))+'</p>';
   if ((r.gwang||[]).length){

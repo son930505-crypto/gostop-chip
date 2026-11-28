@@ -51,6 +51,7 @@ var live1 = L.pkMark(g4, 0, 1);
 assert(live1.ok && names(live1.chains)==='1뻑:3점/단계1', names(live1.chains));
 assert(g4.players.map(function(p){ return p.bal; }).join()==='112000,94000,94000,100000', '실시간 '+g4.players.map(function(p){ return p.bal; }).join());
 assert(g4.pkRec && g4.pkRec[0], '이미 정산 표시');
+assert(L.totalCounts(g4, 0).pk===1, '카드 뻑 횟수 '+L.totalCounts(g4, 0).pk);
 var again = L.calcRound(g4, 1, {score:3, go:0, losers:[{idx:0},{idx:2}], ppeoks:[], seated:[0,1,2]});
 var c4 = JSON.parse(JSON.stringify(g4));
 L.applyRound(c4, again);
@@ -134,15 +135,34 @@ assert(bals(back)==='124000,88000,88000,100000', '2연뻑 '+bals(back));
 L.voidRound(back, false);
 assert(bals(back)==='100000,100000,100000,100000' && !(back.pks||[]).length, '무효 '+bals(back));
 
-// 받은 돈을 이미 쓰면 −는 막고, 무효는 먹은 사람 잔액을 그 금액만큼 더 줄임
+// 받은 돈을 이미 쓰면 −와 무효 모두 막고, 잔액은 0원 아래로 내려가지 않음. 칩 합계도 그대로
 var spent = table();
 L.pkMark(spent, 0, 1);
 spent.players[0].bal = 0;
+var sumSpent = chipSum(spent), roundSpent = spent.round, balSpent = bals(spent);
 var minusSpent = L.pkMark(spent, 0, -1);
 assert(!minusSpent.ok, '쓴 돈 − 거절');
-assert(spent.players[0].bal===0 && spent.players[1].bal===94000, '− 거절 후 유지');
-L.voidRound(spent, false);
-assert(spent.players[0].bal===-12000 && spent.players[1].bal===100000 && spent.players[2].bal===100000, '무효 시 잔액 '+bals(spent));
+var voidSpent = L.voidRound(spent, false);
+assert(voidSpent && voidSpent.ok===false && voidSpent.msg.indexOf('이미 써서')>=0, voidSpent && voidSpent.msg);
+assert(bals(spent)===balSpent && chipSum(spent)===sumSpent && spent.round===roundSpent, '무효 거부 '+bals(spent));
+assert(spent.players.every(function(p){ return p.bal>=0; }), '마이너스 없음');
+assert((spent.pks||[]).some(function(r){ return r.src==='live'; }), '뻑 기록 유지');
+// 받은 돈이 잔액에 있으면 무효는 전부 되돌리고 합계는 같음
+var whole = table();
+L.pkMark(whole, 0, 1);
+var sumWhole = chipSum(whole);
+var voidOk = L.voidRound(whole, false);
+assert(voidOk.ok && bals(whole)==='100000,100000,100000,100000' && chipSum(whole)===sumWhole, '전액 환불 '+bals(whole));
+assert(whole.players.every(function(p){ return p.bal>=0; }), '환불 후 마이너스 없음');
+
+var ui = html.split('function pkMarkUI')[1].split('function ppeokBox')[0];
+assert(ui.indexOf('snap()')>=0 && ui.indexOf('snap()')<ui.indexOf('L.pkMark'), '뻑 체크 전에 스냅샷');
+assert(ui.indexOf('prev=oldPrev')>=0, '실패한 체크는 되돌리기 대상을 안 바꿈');
+var yeonUi = html.split('function pkYeonUI')[1].split('function renderChg')[0];
+assert(yeonUi.indexOf('snap()')>=0 && yeonUi.indexOf('snap()')<yeonUi.indexOf('L.pkYeon'), '연뻑도 스냅샷');
+var voidUi = html.split('function renderVoid')[1].split('function voidGo')[0];
+assert(voidUi.indexOf('이미 보유머니에서 빠진 뻑 돈은 무효하면 돌려줘요')>=0, '무효 문구');
+assert(voidUi.indexOf('id="voidppeok"')>=0, '무효 문구 위치');
 
 // 3) 올인·500원·빚 장부. 뻑은 0원에서 멈추고 장부를 새로 만들지 않음
 var unit = L.newGame(['준석','수현','세훈','미경'], 100000, 1500);
