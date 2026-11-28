@@ -34,11 +34,24 @@ assert(copy.players.map(function(p){ return p.bal; }).join()==='220000,190000,19
 assert(copy.players.reduce(function(s,p){ return s+p.bal; }, 0)===sum0, '합계');
 
 var gy = fresh();
-L.pkMark(gy, 0, 1);
+var y0 = L.pkYeon(gy, 0, 1);
+assert(y0.ok && y0.chains[0].name==='첫뻑' && (gy.pkYeon||{})[0]===1, '연뻑 시작 '+names(y0.chains));
+assert(gy.players.map(function(p){ return p.bal; }).join()==='212000,194000,194000', '첫뻑 돈');
 var y = L.pkYeon(gy, 0, 1);
 assert(y.chains.length===1 && y.chains[0].name==='2연뻑' && y.chains[0].level===2 && y.chains[0].pts===6, '연뻑 '+names(y.chains));
-var resY = L.calcRound(gy, 1, {score:3, go:0, losers:[{idx:0},{idx:2}], ppeoks:y.chains.map(function(c){ return {idx:0, level:c.level, n:c.n, pts:c.pts}; }), seated:[0,1,2]});
-assert(resY.ppeok.length===2 && resY.ppeok.every(function(x){ return x.pay===12000 && x.level===2; }), '2연뻑 12000');
+assert(gy.players.map(function(p){ return p.bal; }).join()==='224000,188000,188000', '2연뻑 돈');
+var resY = L.calcRound(gy, 1, {score:3, go:0, losers:[{idx:0},{idx:2}], ppeoks:[], seated:[0,1,2]});
+assert(!resY.ppeok.length && resY.total===12000, '점수에 2연뻑 또 없음');
+var gyScore = JSON.parse(JSON.stringify(gy));
+L.applyRound(gyScore, resY);
+assert(gyScore.players[0].bal===224000-6000, '뻑 받은 돈 유지 '+gyScore.players[0].bal);
+var y3 = L.pkYeon(gy, 0, 1);
+assert(y3.chains[0].name==='3연뻑' && y3.chains[0].pts===12 && y3.chains[0].level===3, '3연뻑 '+names(y3.chains));
+assert(gy.players.map(function(p){ return p.bal; }).join()==='248000,176000,176000', '3연뻑 돈');
+var win3 = L.calcRound(gy, 0, {chongtong:true, ppeokWin:true, losers:[{idx:1},{idx:2}]});
+var gy3 = JSON.parse(JSON.stringify(gy));
+L.applyRound(gy3, win3);
+assert(gy3.players.map(function(p){ return p.bal; }).join()==='248000,176000,176000', '3연뻑 승 또 안 뺌');
 
 // 4명이고 죽음이 없으면 뻑은 안 되고 돈도 안 움직임
 var g4 = L.newGame(['준석','수현','세훈','미경'], 100000, 2000);
@@ -129,7 +142,7 @@ var restored = JSON.parse(JSON.stringify(before));
 assert(bals(restored)==='100000,100000,100000,100000' && !(restored.pks||[]).length, '스냅샷 되돌리기');
 L.pkMark(back, 0, -1);
 assert(bals(back)==='100000,100000,100000,100000' && !(back.pks||[]).some(function(r){ return r.src==='live'; }), '− 되돌리기');
-L.pkMark(back, 0, 1);
+L.pkYeon(back, 0, 1);
 L.pkYeon(back, 0, 1);
 assert(bals(back)==='124000,88000,88000,100000', '2연뻑 '+bals(back));
 L.voidRound(back, false);
@@ -160,6 +173,18 @@ assert(ui.indexOf('snap()')>=0 && ui.indexOf('snap()')<ui.indexOf('L.pkMark'), '
 assert(ui.indexOf('prev=oldPrev')>=0, '실패한 체크는 되돌리기 대상을 안 바꿈');
 var yeonUi = html.split('function pkYeonUI')[1].split('function renderChg')[0];
 assert(yeonUi.indexOf('snap()')>=0 && yeonUi.indexOf('snap()')<yeonUi.indexOf('L.pkYeon'), '연뻑도 스냅샷');
+assert(html.indexOf('class="finerow pkyeon"')<0, '연뻑 줄 없음');
+assert(html.indexOf('id="pkask"')>=0 && html.indexOf('pkPlus(')>=0, '뻑 + 팝업');
+var mix = table();
+L.pkMark(mix, 0, 1);
+var mixNo = L.pkYeon(mix, 0, 1);
+assert(!mixNo.ok && bals(mix)==='112000,94000,94000,100000', '따로 다음은 연뻑 아님');
+var mix2 = table();
+L.pkYeon(mix2, 0, 1);
+var mixSep = L.pkMark(mix2, 0, 1);
+assert(!mixSep.ok && bals(mix2)==='112000,94000,94000,100000', '연뻑 시작 다음은 따로 아님 '+bals(mix2));
+L.pkYeon(mix2, 0, -1);
+assert(bals(mix2)==='100000,100000,100000,100000' && !((mix2.pkYeon||{})[0]), '연뻑 - '+bals(mix2));
 var voidUi = html.split('function renderVoid')[1].split('function voidGo')[0];
 assert(voidUi.indexOf('이미 보유머니에서 빠진 뻑 돈은 무효하면 돌려줘요')>=0, '무효 문구');
 assert(voidUi.indexOf('id="voidppeok"')>=0, '무효 문구 위치');
