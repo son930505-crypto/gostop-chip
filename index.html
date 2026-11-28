@@ -727,7 +727,7 @@ var L = (function(){
       if (!cheot && sep) { cheot = false; n = 1; } // 따로+: 첫뻑이 아닌 0점 자리. 여기선 횟수만
       else if (!cheot) cheot = true;
       else if (n>=PPEOK_MAX_N && !g.admin) return {ok:false, msg: p.name+' 님은 이번 판 일반 뻑이 이미 '+PPEOK_MAX_N+'번째(마지막)예요'};
-      else n++;
+      else n++; // 2번째에서 + 해도 3번째 일반 뻑. 연뻑 배수로 바꾸지 않음
     } else {
       if (!cheot && !n) return {ok:false};
       if (n>0) n--; else cheot = false;

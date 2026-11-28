@@ -20,7 +20,13 @@ assert(names(a2.chains)==='첫뻑:3점/단계1 + 1번째:3점/단계1', names(a2
 
 var a3 = L.pkMark(g, 0, 1);
 assert(a3.chains.every(function(c){ return c.level===1; }), '+만으로는 2연뻑이 안 됨 '+names(a3.chains));
-assert(a3.chains[2].name==='2번째' && a3.chains[2].pts===0, '2번째는 배수 없음');
+assert(a3.chains[2].name==='2번째' && a3.chains[2].pts===0, '2번째는 배수 없음 '+names(a3.chains));
+// 따로 뻑 2번째에서 + : 2연뻑이 아니라 3번째 일반 뻑
+var a4 = L.pkMark(g, 0, 1);
+assert(!(g.pkYeon||{})[0], '연뻑 버튼은 그대로 꺼짐');
+assert(a4.chains.every(function(c){ return c.level===1 && c.name!=='2연뻑' && c.name!=='3연뻑'; }), '2번째 다음 + '+names(a4.chains));
+assert(a4.chains.some(function(c){ return c.name==='3번째' && c.pts===5; }), '3번째 일반 뻑 '+names(a4.chains));
+L.pkMark(g, 0, -1);
 
 // 연뻑이 아닌 두 뻑 정산: 각 6,000원, 2연뻑 없음
 L.pkMark(g, 0, -1);
