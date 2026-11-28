@@ -137,6 +137,18 @@ var L = (function(){
   function splitInt(total, ws){ var sw = ws.reduce(function(a,b){ return a+b; }, 0); if (!(total>0) || !(sw>0)) return ws.map(function(){ return 0; });
     var raw = ws.map(function(w){ return total*w/sw; }), out = raw.map(Math.floor), rem = total - out.reduce(function(a,b){ return a+b; }, 0);
     raw.map(function(x,k){ return {k:k, f:x-Math.floor(x)}; }).sort(function(a,b){ return b.f-a.f || a.k-b.k; }).forEach(function(x){ if (rem>0){ out[x.k]++; rem--; } }); return out; }
+  // 최종 정산 부족분만 500원 단위. floor(몫/500)*500 후 남은 500원 조각은 소수 큰 순(동점이면 장부 큰 순, 그다음 앞 번호). 500 미만 나머지는 가장 큰 받는 사람에게.
+  function split500(total, ws){
+    var n=ws.length, out=ws.map(function(){ return 0; }); if(!n||!(total>0)) return out;
+    var sw=0; for(var i=0;i<n;i++) sw+=ws[i]; if(!(sw>0)) return out;
+    var unit=500, rem=((total%unit)+unit)%unit, bulk=total-rem, units=Math.round(bulk/unit);
+    var raw=ws.map(function(w){ return units*w/sw; }), got=raw.map(function(x){ return Math.floor(x); });
+    var left=units-got.reduce(function(a,b){ return a+b; },0);
+    raw.map(function(x,k){ return {k:k, f:x-Math.floor(x), w:ws[k]}; }).sort(function(a,b){ return b.f-a.f || b.w-a.w || a.k-b.k; }).forEach(function(x){ if(left>0){ got[x.k]++; left--; } });
+    for(var j=0;j<n;j++) out[j]=got[j]*unit;
+    if(rem){ var best=0; for(var t=1;t<n;t++) if(ws[t]>ws[best]||(ws[t]===ws[best]&&t<best)) best=t; out[best]+=rem; }
+    return out;
+  }
   function overOf(from, pre, to){ var tot = to.reduce(function(s,x){ return s+x.pay; }, 0), over = Math.max(0, tot - Math.max(0, pre)); if (!over) return [];
     var cut = splitInt(over, to.map(function(x){ return x.pay; })); return to.map(function(x,k){ return {f:from, t:x.i, a:cut[k]}; }).filter(function(x){ return x.a>0; }); }
   function oweRec(g, rec, sign){ (rec && rec.over || []).forEach(function(x){ if (!g.owe) g.owe = {}; var m = g.owe[x.f] = g.owe[x.f] || {}; m[x.t] = (m[x.t]||0) + sign*x.a; if (m[x.t]<=0) delete m[x.t]; if (!Object.keys(m).length) delete g.owe[x.f]; }); if (g.owe && !Object.keys(g.owe).length) delete g.owe; }
@@ -1029,9 +1041,9 @@ var L = (function(){
     var shortT = 0, R = {}; rows.forEach(function(r){ R[r.i] = r; });
     rows.forEach(function(d){ if (!(d.bal<0)) return; var S = -d.bal; d.short = S; d.net = -d.invested; shortT += S;
       var led = (g.owe||{})[d.i] || {}, ks = Object.keys(led).map(Number).filter(function(k){ return R[k] && k!==d.i && led[k]>0 && !(R[k].bal<0); }); // 받은 사람도 마이너스로 끝났으면 이미 충전금액 한도라 빼고
-      var L0 = ks.reduce(function(s,k){ return s+led[k]; }, 0), use = Math.min(S, L0), cuts = splitInt(use, ks.map(function(k){ return led[k]; }));
+      var L0 = ks.reduce(function(s,k){ return s+led[k]; }, 0), use = Math.min(S, L0), cuts = split500(use, ks.map(function(k){ return led[k]; }));
       ks.forEach(function(k,q){ if (cuts[q]){ R[k].cut += cuts[q]; R[k].net -= cuts[q]; (d.cutTo = d.cutTo||[]).push({i:k, amt:cuts[q]}); } });
-      var left = S - use; if (left>0){ var cr = rows.filter(function(r){ return r.net>0; }), cc = splitInt(Math.min(left, cr.reduce(function(s,r){ return s+r.net; }, 0)), cr.map(function(r){ return r.net; }));
+      var left = S - use; if (left>0){ var cr = rows.filter(function(r){ return r.net>0; }), cc = split500(Math.min(left, cr.reduce(function(s,r){ return s+r.net; }, 0)), cr.map(function(r){ return r.net; }));
         cr.forEach(function(r,q){ if (cc[q]){ r.cut += cc[q]; r.net -= cc[q]; (d.cutTo = d.cutTo||[]).push({i:r.i, amt:cc[q]}); } }); }
     });
     var cred = rows.filter(function(r){return r.net>0;}).map(function(r){return {i:r.i, v:r.net};});
