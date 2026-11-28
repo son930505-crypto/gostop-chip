@@ -257,7 +257,16 @@ var yeWinCopy = JSON.parse(JSON.stringify(ye));
 L.applyRound(yeWinCopy, yeWin);
 assert(bals(yeWinCopy)==='148000,76000,76000,100000', '3연뻑 승 이동 0');
 L.pkYeon(ye, 0, -1);
-assert(bals(ye)==='124000,88000,88000,100000', '3연뻑 -는 2연뻑');
+assert(bals(ye)==='124000,88000,88000,100000' && (ye.pkYeon||{})[0]===2, '3연뻑 -는 2연뻑');
+L.pkYeon(ye, 0, -1);
+assert(!(ye.pkYeon||{})[0] && (ye.pkPlainN||{})[0]===1 && bals(ye)==='112000,94000,94000,100000', '2연뻑 -는 1뻑 '+bals(ye));
+var spentUp = table();
+L.pkMark(spentUp, 0, 1);
+spentUp.players[0].bal = 1000;
+var sumBefore = chipSum(spentUp);
+var up = L.pkYeon(spentUp, 0, 1);
+assert(up.ok && bals(spentUp)==='13000,88000,88000,100000' && chipSum(spentUp)===sumBefore, '쓴 뒤에도 2연뻑 '+bals(spentUp));
+assert(spentUp.players.every(function(p){ return p.bal>=0; }), '올린 뒤 마이너스 없음');
 
 console.log('ok', names(s1.chains), '→', names(s2.chains), '→', names(s3.chains), 'win', win.total, 'live', live1.rec && live1.rec.total);
 console.log('settle', bals(once2), 'cap', bals(cap2), 'final3', bals(fin), 'jeonpan', shown.nets.map(function(x){ return x.amt; }).join());
